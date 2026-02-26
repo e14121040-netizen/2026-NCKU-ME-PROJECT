@@ -3,6 +3,14 @@
 > 國立成功大學 機械工程學系 2026 機械專題實作  
 > 乙班第2組
 
+## 🚀 快速入門
+
+**第一次打開這個專案？** 請按順序閱讀：
+
+1. 📖 **[開發步驟指南](開發步驟指南.md)** — 整個專案的分階段開發流程（從環境準備到最終報告）
+2. 🤖 **[取物機器人 README](取物機器人(六足Chebyshev)/README.md)** — 六足 Chebyshev 子系統總覽
+3. 🚚 **[運輸機器人 README](運輸機器人(EV3)/README.md)** — EV3 循跡子系統總覽
+
 ## 📋 專案概述
 
 利用機器人系統在物流倉儲中心內執行物品取放任務。本組製作兩台機器人：
@@ -37,21 +45,42 @@
 
 ```
 2026-NCKU-ME-PROJECT/
-├── README.md                          ← 本文件
-├── 2026機械專題實作.pdf                 ← 競賽規則
+├── README.md                              ← 本文件
+├── 開發步驟指南.md                         ← ⭐ 逐步開發流程指南
+├── 2026機械專題實作.pdf                    ← 競賽規則
+│
 ├── 取物機器人(六足Chebyshev)/
-│   ├── arduino/                       ← Arduino 程式碼
-│   │   └── walking_robot.ino
-│   ├── app_inventor/                  ← App Inventor 遙控 App
-│   └── 機構設計/                       ← CAD 檔案、連桿圖
+│   ├── README.md                          ← 子系統總覽
+│   ├── BOM.md                             ← 零件清單與預算
+│   ├── arduino/
+│   │   └── walking_robot.ino              ← Arduino 主程式
+│   ├── app_inventor/
+│   │   ├── App指令對照表.md                ← 藍芽指令對照
+│   │   └── AppInventor開發指南.md          ← App 開發教學
+│   ├── 電控/
+│   │   └── 接線圖.md                      ← 完整接線參考
+│   └── 機構設計/
+│       ├── Chebyshev連桿設計參考.md        ← 連桿理論與尺寸
+│       └── chebyshev_visualization.py     ← 連桿動畫工具
+│
 ├── 運輸機器人(EV3)/
-│   ├── ev3_program/                   ← EV3 MicroPython 程式
-│   │   └── transport_robot.py
-│   └── 機構設計/                       ← EV3 組裝設計
+│   ├── README.md                          ← 子系統總覽
+│   ├── BOM.md                             ← 零件清單
+│   ├── ev3_program/
+│   │   └── transport_robot.py             ← EV3 MicroPython 主程式
+│   └── 機構設計/
+│       └── EV3組裝設計參考.md              ← 組裝要點
+│
 ├── 文件/
-│   ├── 報告/                          ← 計畫書、期中/期末報告
-│   └── 海報/                          ← 海報檔案
-└── 歷屆學長資料(2021屆)/                ← 2021 屆學長的參考資料
+│   ├── 報告/                              ← 計畫書、期中/期末報告
+│   └── 海報/                              ← 海報檔案
+│
+└── 歷屆學長資料(2021屆)/                   ← 2021 屆學長的參考資料
+    ├── 底盤及吸氣馬達_MEGA.ino
+    ├── 底盤及吸氣馬達操作app.aia / .apk
+    ├── 手臂及伺服馬達_UNO.ino
+    ├── 手臂及伺服馬達操作app.aia / .apk
+    └── 機專收支Github用.xlsx
 ```
 
 ## 🔧 開發環境
@@ -62,6 +91,21 @@
 | [App Inventor](https://appinventor.mit.edu/) | 遙控 App 開發 |
 | [EV3 MicroPython](https://pybricks.com/ev3-micropython/) | 運輸機器人程式開發 |
 | SolidWorks / Fusion 360 | 機構 3D 建模 |
+
+## 📊 開發進度
+
+| 項目 | 狀態 |
+|------|------|
+| 底盤機構設計 | ⬜ 未開始 |
+| 底盤加工組裝 | ⬜ 未開始 |
+| 電控接線 | ⬜ 未開始 |
+| Arduino 程式 | ✅ 完成 |
+| App Inventor | ⬜ 未開始 |
+| 手臂設計整合 | ⬜ 未開始 |
+| EV3 組裝 | ⬜ 未開始 |
+| EV3 程式 | ✅ 完成 |
+| 聯合測試 | ⬜ 未開始 |
+| 報告海報 | ⬜ 未開始 |
 
 ## 👥 組員與工作分配
 
