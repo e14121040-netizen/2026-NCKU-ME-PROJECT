@@ -1,8 +1,10 @@
 ---
-description: How to compile and upload Arduino sketches on this Apple Silicon Mac
+description: How to compile and upload Arduino sketches on this Apple Silicon Mac. Only use this workflow on macOS; skip entirely on Windows.
 ---
 
-# Arduino Development Workflow
+# Arduino Development Workflow (macOS Only)
+
+> **⚠️ This workflow is for macOS (Apple Silicon) only.** On Windows, use the Arduino IDE directly instead.
 
 ## Critical Reminders
 
