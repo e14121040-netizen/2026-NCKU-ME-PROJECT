@@ -71,6 +71,10 @@ PLACE_SPEED = 200     # 放置機構速度 (deg/s)
 # 放置區數量
 NUM_ZONES = 4
 
+# 安全參數
+LINE_FOLLOW_TIMEOUT = 30000   # 循跡逾時 (ms)，超過此時間沒偵測到停止線則停車
+MIN_BATTERY_MV = 7000         # EV3 低電量警戒 (mV)
+
 # =====================================================
 #  PID 循跡控制器
 # =====================================================
@@ -97,6 +101,39 @@ class PIDController:
 
 
 pid = PIDController(KP, KI, KD)
+
+# =====================================================
+#  輔助函式
+# =====================================================
+def show_status(line1, line2="", line3=""):
+    """在 EV3 螢幕顯示狀態（含電量）"""
+    ev3.screen.clear()
+    battery_mv = ev3.battery.voltage()
+    battery_v = battery_mv / 1000.0
+    ev3.screen.print("Bat: {:.1f}V".format(battery_v))
+    ev3.screen.print(line1)
+    if line2:
+        ev3.screen.print(line2)
+    if line3:
+        ev3.screen.print(line3)
+
+
+def check_battery():
+    """檢測電池電量，低於警戒值則節拍提醒"""
+    if ev3.battery.voltage() < MIN_BATTERY_MV:
+        ev3.speaker.beep(frequency=300, duration=500)
+        show_status("LOW BATTERY!", "Charge EV3")
+        return True
+    return False
+
+
+def safe_stop(message="Stopped"):
+    """安全停車：停止所有馬達，顯示訊息"""
+    robot.stop()
+    motor_place.stop()
+    ev3.speaker.beep(frequency=400, duration=300)
+    show_status(message)
+
 
 # =====================================================
 #  核心函式
@@ -133,10 +170,6 @@ def follow_line():
     error = read_line_position()
     correction = pid.compute(error)
     
-    # 計算左右輪速度
-    left_speed  = BASE_SPEED + correction
-    right_speed = BASE_SPEED - correction
-    
     robot.drive(BASE_SPEED, correction * 2)  # DriveBase: (speed, turn_rate)
     
     return check_stop_line()
@@ -163,6 +196,7 @@ def return_to_start():
     注意：需要掉頭或走回路到起點，依場地軌跡設計調整。
     """
     pid.reset()
+    timer = StopWatch()
     
     while True:
         stop_color = follow_line()
@@ -172,6 +206,13 @@ def return_to_start():
             ev3.speaker.beep(frequency=1000, duration=500)
             return
         
+        # Timeout 保護
+        if timer.time() > LINE_FOLLOW_TIMEOUT:
+            safe_stop("Timeout!")
+            wait(3000)
+            pid.reset()
+            timer.reset()
+        
         wait(10)
 
 
@@ -180,12 +221,7 @@ def return_to_start():
 # =====================================================
 def main():
     ev3.speaker.beep(frequency=500, duration=300)
-    ev3.screen.clear()
-    ev3.screen.print("Transport Robot")
-    ev3.screen.print("Ready!")
-    ev3.screen.print("")
-    ev3.screen.print("Press Touch or")
-    ev3.screen.print("Center Button")
+    show_status("Transport Robot", "Ready!", "Press Touch/Center")
     
     # ---- 等待啟動 ----
     while True:
@@ -193,19 +229,25 @@ def main():
             break
         wait(50)
     
+    # 初始電量檢測
+    if check_battery():
+        wait(5000)
+        # 低電量但仍允許啟動，只是警告
+    
     ev3.speaker.beep(frequency=600, duration=200)
     wait(1000)  # 啟動延遲
     
     # ---- 主循環 ----
     zones_visited = 0
-    timer = StopWatch()
     
     while zones_visited < NUM_ZONES:
-        ev3.screen.clear()
-        ev3.screen.print("Running...")
-        ev3.screen.print("Zone: {}/{}".format(zones_visited + 1, NUM_ZONES))
+        show_status(
+            "Running...",
+            "Zone: {}/{}".format(zones_visited + 1, NUM_ZONES)
+        )
         
         pid.reset()
+        segment_timer = StopWatch()
         
         # ---- 循跡行駛 ----
         while True:
@@ -220,34 +262,55 @@ def main():
                 place_parts()
                 zones_visited += 1
                 
-                ev3.screen.clear()
-                ev3.screen.print("Placed at zone")
-                ev3.screen.print(str(zones_visited))
+                show_status(
+                    "Placed!",
+                    "Zone {}/{}".format(zones_visited, NUM_ZONES)
+                )
                 wait(500)
                 break
             
             elif stop_color == Color.RED:
                 # 回到起點
                 robot.stop()
-                ev3.screen.clear()
-                ev3.screen.print("At Start")
-                ev3.screen.print("Waiting...")
+                show_status("At Start", "Waiting...")
                 
                 # 等待新一批零件（觸碰感測器觸發）
                 while not touch_sensor.pressed():
-                    wait(50)
+                    # 等待時定期更新電量顯示
+                    show_status("At Start", "Waiting...")
+                    wait(2000)
                 wait(500)
                 break
+            
+            # Timeout 保護：循跡過久表示可能脱軌
+            if segment_timer.time() > LINE_FOLLOW_TIMEOUT:
+                safe_stop("Timeout!")
+                ev3.speaker.beep(frequency=200, duration=1000)
+                wait(3000)
+                # 重置後繼續嘗試
+                pid.reset()
+                segment_timer.reset()
+            
+            # 定期檢測電量
+            if segment_timer.time() % 10000 < 15:
+                check_battery()
             
             wait(10)  # 循跡迴圈延遲
     
     # ---- 任務完成 ----
     robot.stop()
-    ev3.screen.clear()
-    ev3.screen.print("Mission Complete!")
-    ev3.screen.print("Zones: {}".format(zones_visited))
+    show_status(
+        "Mission Complete!",
+        "Zones: {}".format(zones_visited)
+    )
     ev3.speaker.beep(frequency=1000, duration=1000)
 
 
 # 執行主程式
-main()
+try:
+    main()
+except Exception as e:
+    # 安全停車：任何異常都先停下馬達
+    safe_stop("ERROR!")
+    ev3.screen.print(str(e))
+    wait(10000)

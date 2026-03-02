@@ -28,6 +28,7 @@
  *    'i' = 肘上升     'k' = 肘下降
  *    'o' = 爪張開     'p' = 爪閉合
  *    'h' = 手臂歸位
+ *    'v' = 回傳電池電壓
  */
 
 #include <Wire.h>
@@ -45,6 +46,19 @@
 #define MOTOR_R_IN1   42
 #define MOTOR_R_IN2   43
 #define MOTOR_R_EN    10
+
+// =====================================================
+//  電池電壓監測
+// =====================================================
+// 用分壓器 (例如 30kΩ + 10kΩ) 將電池電壓降到 Arduino 可讀範圍
+// Vbat = analogRead * (5.0/1023) * ((R1+R2)/R2)
+#define BATTERY_PIN       A0
+#define VOLTAGE_DIVIDER   4.0    // (30k+10k)/10k = 4.0，依實際電阻調整
+#define LOW_VOLTAGE       10.0   // 3S LiPo 低電壓警戒 (3.33V/cell)
+#define CRITICAL_VOLTAGE  9.6    // 強制停機電壓 (3.2V/cell)
+
+// LED 狀態指示
+#define LED_PIN           13     // 內建 LED
 
 // =====================================================
 //  PCA9685 伺服馬達通道定義
@@ -90,6 +104,17 @@ const int CLAW_HOME    = 40;
 const int SPEED_FULL = 200;    // 全速 PWM 值 (0~255)
 const int SPEED_HALF = 120;    // 半速 PWM 值
 const int SPEED_TURN = 150;    // 轉向速度
+const int RAMP_STEP  = 10;     // 加減速每次增量
+const int RAMP_DELAY = 15;     // 加減速間隔 (ms)
+
+// 當前馬達速度追蹤（用於平滑加減速）
+int currentSpeedL = 0;
+int currentSpeedR = 0;
+
+// 電壓監測計時
+unsigned long lastVoltageCheck = 0;
+const unsigned long VOLTAGE_CHECK_INTERVAL = 5000; // 每 5 秒檢測一次
+bool lowVoltageWarning = false;
 
 // =====================================================
 //  馬達控制類別（複用學長的 Motor 類別改良版）
@@ -97,11 +122,13 @@ const int SPEED_TURN = 150;    // 轉向速度
 class Motor {
     private:
         int pinIN1, pinIN2, pinEN;
+        int _currentSpeed;  // 追蹤當前速度
     public:
         Motor(int in1, int in2, int en) {
             pinIN1 = in1;
             pinIN2 = in2;
             pinEN  = en;
+            _currentSpeed = 0;
             pinMode(pinIN1, OUTPUT);
             pinMode(pinIN2, OUTPUT);
             pinMode(pinEN,  OUTPUT);
@@ -119,13 +146,28 @@ class Motor {
                 digitalWrite(pinIN1, LOW);
                 digitalWrite(pinIN2, LOW);
             }
-            speed = abs(speed);
-            speed = constrain(speed, 0, 255);
-            analogWrite(pinEN, speed);
+            _currentSpeed = speed;
+            int pwm = constrain(abs(speed), 0, 255);
+            analogWrite(pinEN, pwm);
         }
         
+        // 平滑加減速到目標速度（避免突然啟停衝擊機構）
+        void rampTo(int targetSpeed) {
+            while (_currentSpeed != targetSpeed) {
+                if (_currentSpeed < targetSpeed) {
+                    _currentSpeed = min(_currentSpeed + RAMP_STEP, targetSpeed);
+                } else {
+                    _currentSpeed = max(_currentSpeed - RAMP_STEP, targetSpeed);
+                }
+                setSpeed(_currentSpeed);
+                delay(RAMP_DELAY);
+            }
+        }
+        
+        int getCurrentSpeed() { return _currentSpeed; }
+        
         void stop() {
-            setSpeed(0);
+            rampTo(0);
         }
 };
 
@@ -146,16 +188,54 @@ void setServo(int channel, int angle) {
 }
 
 // =====================================================
+//  電池電壓監測
+// =====================================================
+float readBatteryVoltage() {
+    int raw = analogRead(BATTERY_PIN);
+    return raw * (5.0 / 1023.0) * VOLTAGE_DIVIDER;
+}
+
+void checkBattery() {
+    float voltage = readBatteryVoltage();
+    
+    if (voltage < CRITICAL_VOLTAGE) {
+        // 強制停機：電壓過低會損壞鋰電池
+        stopWalking();
+        armHome();
+        Serial.println(F("!!! CRITICAL: Battery too low! Shutting down."));
+        // 快速閃爍 LED 警告
+        while (true) {
+            digitalWrite(LED_PIN, HIGH);
+            delay(100);
+            digitalWrite(LED_PIN, LOW);
+            delay(100);
+        }
+    } else if (voltage < LOW_VOLTAGE) {
+        if (!lowVoltageWarning) {
+            lowVoltageWarning = true;
+            Serial.print(F("WARNING: Low battery = "));
+            Serial.print(voltage, 1);
+            Serial.println(F("V"));
+        }
+        // 慢速閃爍提醒
+        digitalWrite(LED_PIN, (millis() / 500) % 2);
+    } else {
+        lowVoltageWarning = false;
+        digitalWrite(LED_PIN, HIGH);  // 正常：LED 常亮
+    }
+}
+
+// =====================================================
 //  步行控制函式
 // =====================================================
 void walkForward(int speed) {
-    motorLeft.setSpeed(speed);
-    motorRight.setSpeed(speed);
+    motorLeft.rampTo(speed);
+    motorRight.rampTo(speed);
 }
 
 void walkBackward(int speed) {
-    motorLeft.setSpeed(-speed);
-    motorRight.setSpeed(-speed);
+    motorLeft.rampTo(-speed);
+    motorRight.rampTo(-speed);
 }
 
 void turnLeft(int speed) {
@@ -232,6 +312,17 @@ void setup() {
     Serial.begin(9600);       // Debug 用
     Serial1.begin(38400);     // HC-05 藍芽（MEGA 的 Serial1 = Pin 18/19）
     
+    // LED 狀態指示
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, HIGH);
+    
+    // 電池電壓初始檢測
+    pinMode(BATTERY_PIN, INPUT);
+    float initVoltage = readBatteryVoltage();
+    Serial.print(F("Battery: "));
+    Serial.print(initVoltage, 1);
+    Serial.println(F("V"));
+    
     // 初始化 PCA9685
     pwm.begin();
     pwm.setPWMFreq(SERVO_FREQ);
@@ -248,6 +339,12 @@ void setup() {
 //  Main Loop — 接收藍芽指令並執行
 // =====================================================
 void loop() {
+    // 定期檢測電池電壓
+    if (millis() - lastVoltageCheck > VOLTAGE_CHECK_INTERVAL) {
+        lastVoltageCheck = millis();
+        checkBattery();
+    }
+    
     if (Serial1.available()) {
         char cmd = Serial1.read();
         Serial.print(F("CMD: "));
@@ -275,6 +372,18 @@ void loop() {
             case 'o':  clawOpen();      break;
             case 'p':  clawClose();     break;
             case 'h':  armHome();       break;
+            
+            // --------- 狀態查詢 ---------
+            case 'v': {
+                float v = readBatteryVoltage();
+                Serial.print(F("Battery: "));
+                Serial.print(v, 1);
+                Serial.println(F("V"));
+                // 也透過藍芽回傳給 App
+                Serial1.print(v, 1);
+                Serial1.print(F("V"));
+                break;
+            }
             
             default:
                 break;

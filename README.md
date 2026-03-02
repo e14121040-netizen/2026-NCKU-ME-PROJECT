@@ -71,6 +71,8 @@
 │
 ├── 文件/                                   ← 📄 課程文件與報告
 │   ├── Engineering Design Process - 2026_notes.pdf
+│   ├── 故障排除指南.md                      ← 🔧 所有問題的集中排查手冊
+│   ├── 比賽當天Checklist.md                 ← ✅ 比賽日必備清單
 │   ├── 報告/                              ← 報告格式範本
 │   │   ├── 專題計畫書格式2026.docx.pdf
 │   │   ├── 期中報告格式2026.docx.pdf
@@ -78,6 +80,7 @@
 │   └── 海報/                              ← 海報檔案（待新增）
 │
 ├── 開會紀錄/                               ← 📝 每週開會紀錄
+│   ├── TEMPLATE.md                        ← 會議紀錄模板
 │   ├── 0224.md
 │   └── 0303.md
 │
@@ -94,25 +97,59 @@
 
 | 工具 | 用途 |
 |------|------|
-| [Arduino IDE](https://www.arduino.cc/en/software) | 取物機器人程式開發 |
+| [Arduino IDE](https://www.arduino.cc/en/software) 或 [VS Code + Arduino 擴充](https://marketplace.visualstudio.com/items?itemName=vsciot-vscode.vscode-arduino) | 取物機器人程式開發 |
 | [App Inventor](https://appinventor.mit.edu/) | 遙控 App 開發 |
 | [EV3 MicroPython](https://pybricks.com/ev3-micropython/) | 運輸機器人程式開發 |
 | SolidWorks / Fusion 360 | 機構 3D 建模 |
 
-## 📊 開發進度
+## 📊 開發進度（與[開發步驟指南](開發步驟指南.md)同步）
 
-| 項目 | 狀態 |
-|------|------|
-| 底盤機構設計 | ⬜ 未開始 |
-| 底盤加工組裝 | ⬜ 未開始 |
-| 電控接線 | ⬜ 未開始 |
-| Arduino 程式 | ✅ 完成 |
-| App Inventor | ⬜ 未開始 |
-| 手臂設計整合 | ⬜ 未開始 |
-| EV3 組裝 | ⬜ 未開始 |
-| EV3 程式 | ✅ 完成 |
-| 聯合測試 | ⬜ 未開始 |
-| 報告海報 | ⬜ 未開始 |
+### 階段 0：環境準備與採購
+- [ ] 軟體安裝（Arduino IDE 或 VS Code + Arduino 擴充 / App Inventor / VS Code + EV3 / Python）
+- [ ] Arduino 函式庫安裝（Adafruit PWM Servo Driver）
+- [ ] 零件採購（取物機器人 + 運輸機器人）
+- [ ] 學長 `.aia` 檔案已下載並可開啟
+
+### 階段 1：取物機器人 — 底盤機構
+- [ ] Python 可視化確認連桿參數
+- [ ] SolidWorks 繪製連桿片 + 底盤 2D 圖
+- [ ] 雷射切割壓克力
+- [ ] 組裝六足底盤 + 手搖測試
+
+### 階段 2：取物機器人 — 電控接線
+- [ ] L298N + 直流馬達接線完成
+- [ ] HC-05 藍芽連線測試
+- [x] Arduino 主程式完成（`walking_robot.ino`）
+- [ ] PCA9685 + 伺服馬達接線測試
+
+### 階段 3：取物機器人 — 遙控 App
+- [ ] App Inventor 完成遙控 App
+- [ ] 步行按鈕（按住/放開）測試通過
+- [ ] 手臂按鈕測試通過
+- [ ] 匯出 `.apk` 安裝到手機
+
+### 階段 4：取物機器人 — 手臂整合
+- [ ] 手臂結構設計 + 加工
+- [ ] 安裝到底盤 + 重心確認
+- [ ] 伺服角度參數校正
+- [ ] 步行 + 手臂同時操作測試
+
+### 階段 5：運輸機器人 — EV3
+- [ ] EV3 底盤組裝（馬達 + 感測器）
+- [ ] 放置機構組裝
+- [x] EV3 主程式完成（`transport_robot.py`）
+- [ ] PID 循跡調校
+- [ ] 黃色/紅色停止線偵測測試
+
+### 階段 6：雙機聯合測試
+- [ ] 模擬場地建立
+- [ ] 協同流程演練（取物 → 放置 → 運輸）
+- [ ] 計時練習 + 瓶頸優化
+
+### 階段 7：報告與最終調校
+- [ ] 計畫書 / 期中 / 期末報告
+- [ ] 海報製作
+- [ ] 最終參數固定 + 備品準備
 
 ## 👥 組員與工作分配
 

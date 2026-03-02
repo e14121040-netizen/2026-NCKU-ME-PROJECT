@@ -1,2 +1,57 @@
-# AI agent configuration (local, OS-specific)
+# =====================================================
+#  2026 NCKU ME Project — .gitignore
+# =====================================================
+
+# --- AI agent configuration ---
 .agent/
+.gemini/
+
+# --- macOS ---
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+*.swp
+*~
+
+# --- Windows ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# --- IDE / Editor ---
+.vscode/
+.idea/
+*.code-workspace
+*.sublime-*
+
+# --- Arduino build ---
+build/
+*.elf
+*.hex
+*.bin
+*.o
+*.d
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.env
+venv/
+
+# --- SolidWorks / CAD temp ---
+~$*
+*.sldprt.bak
+*.sldasm.bak
+*.slddrw.bak
+*.tmp
+
+# --- EV3 output ---
+*.ev3p.bak
+
+# --- General ---
+*.log
+*.bak
+*.orig
+.tmp/

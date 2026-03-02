@@ -53,7 +53,7 @@ Arduino MEGA 2560
 
 1. 閱讀 [BOM.md](BOM.md) 確認零件
 2. 閱讀 [電控/接線圖.md](電控/接線圖.md) 完成接線
-3. 用 Arduino IDE 上傳 [walking_robot.ino](arduino/walking_robot.ino)
+3. 用 VS Code（或 Arduino IDE）上傳 [walking_robot.ino](arduino/walking_robot.ino)
 4. 用 App Inventor 建立遙控 App（見 [AppInventor開發指南.md](app_inventor/AppInventor開發指南.md)）
 5. 測試藍芽控制步行和手臂
 
