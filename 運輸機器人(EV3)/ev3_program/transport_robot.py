@@ -61,8 +61,11 @@ KI = 0.01      # 積分增益
 KD = 0.5       # 微分增益
 BASE_SPEED = 100  # 基礎行駛速度 (mm/s)
 
-# 循跡閾值
+# 循跡閾值（可由 calibrate_sensors() 自動計算）
 LINE_THRESHOLD = 20  # 反射值低於此為黑線
+
+# 電量檢查間隔 (ms)
+BATTERY_CHECK_INTERVAL = 10000
 
 # 放置機構參數
 PLACE_ANGLE = 90      # 放置機構旋轉角度
@@ -135,6 +138,41 @@ def safe_stop(message="Stopped"):
     show_status(message)
 
 
+def calibrate_sensors():
+    """
+    啟動時校準感測器：讀取白色地板和黑線的反射值，
+    自動計算 LINE_THRESHOLD。
+    """
+    global LINE_THRESHOLD
+    show_status("Calibration", "Place on WHITE", "Press Center")
+    while Button.CENTER not in ev3.buttons.pressed():
+        wait(50)
+    wait(300)  # debounce
+    white_left = sensor_left.reflection()
+    white_right = sensor_right.reflection()
+    ev3.speaker.beep(frequency=600, duration=200)
+
+    show_status("Calibration", "Place on BLACK", "Press Center")
+    while Button.CENTER not in ev3.buttons.pressed():
+        wait(50)
+    wait(300)  # debounce
+    black_left = sensor_left.reflection()
+    black_right = sensor_right.reflection()
+    ev3.speaker.beep(frequency=800, duration=200)
+
+    # 取白與黑的中間值作為閾值
+    white_avg = (white_left + white_right) / 2
+    black_avg = (black_left + black_right) / 2
+    LINE_THRESHOLD = int((white_avg + black_avg) / 2)
+
+    show_status(
+        "Cal Done!",
+        "W:{} B:{}".format(int(white_avg), int(black_avg)),
+        "Thr:{}".format(LINE_THRESHOLD)
+    )
+    wait(1500)
+
+
 # =====================================================
 #  核心函式
 # =====================================================
@@ -190,31 +228,6 @@ def place_parts():
     wait(300)
 
 
-def return_to_start():
-    """
-    循跡返回起點（偵測到紅色停止線停下）。
-    注意：需要掉頭或走回路到起點，依場地軌跡設計調整。
-    """
-    pid.reset()
-    timer = StopWatch()
-    
-    while True:
-        stop_color = follow_line()
-        
-        if stop_color == Color.RED:
-            robot.stop()
-            ev3.speaker.beep(frequency=1000, duration=500)
-            return
-        
-        # Timeout 保護
-        if timer.time() > LINE_FOLLOW_TIMEOUT:
-            safe_stop("Timeout!")
-            wait(3000)
-            pid.reset()
-            timer.reset()
-        
-        wait(10)
-
 
 # =====================================================
 #  主程式
@@ -234,11 +247,28 @@ def main():
         wait(5000)
         # 低電量但仍允許啟動，只是警告
     
+    # ---- 感測器校準（可選）----
+    # 按下 EV3 上方按鈕（UP）跳過校準，按中心鈕開始校準
+    show_status("Calibrate?", "Center=Yes", "Up=Skip")
+    cal_timer = StopWatch()
+    do_calibrate = False
+    while cal_timer.time() < 3000:
+        if Button.CENTER in ev3.buttons.pressed():
+            do_calibrate = True
+            break
+        if Button.UP in ev3.buttons.pressed():
+            break
+        wait(50)
+    
+    if do_calibrate:
+        calibrate_sensors()
+    
     ev3.speaker.beep(frequency=600, duration=200)
     wait(1000)  # 啟動延遲
     
     # ---- 主循環 ----
     zones_visited = 0
+    battery_timer = StopWatch()  # 獨立電量檢查計時器
     
     while zones_visited < NUM_ZONES:
         show_status(
@@ -284,15 +314,18 @@ def main():
             
             # Timeout 保護：循跡過久表示可能脱軌
             if segment_timer.time() > LINE_FOLLOW_TIMEOUT:
-                safe_stop("Timeout!")
+                robot.stop()
                 ev3.speaker.beep(frequency=200, duration=1000)
-                wait(3000)
-                # 重置後繼續嘗試
+                show_status("Timeout!", "Retrying...")
+                wait(2000)
+                # 重置後繼續嘗試（不再呼叫 safe_stop 以避免卡住）
                 pid.reset()
                 segment_timer.reset()
+                # 注意：下一次迴圈的 follow_line() 會重新驅動馬達
             
-            # 定期檢測電量
-            if segment_timer.time() % 10000 < 15:
+            # 定期檢測電量（使用獨立計時器，可靠觸發）
+            if battery_timer.time() > BATTERY_CHECK_INTERVAL:
+                battery_timer.reset()
                 check_battery()
             
             wait(10)  # 循跡迴圈延遲

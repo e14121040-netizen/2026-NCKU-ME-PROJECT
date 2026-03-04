@@ -73,7 +73,8 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(); // 預設 I2C 位址 0x
 #define CH_SHOULDER 0 // 肩關節（升降）
 #define CH_ELBOW 1    // 肘關節（伸縮）
 #define CH_CLAW 2     // 夾爪（開合）
-// 預留 CH 3~5 給額外伺服
+#define CH_TRAY 3     // 承物台伺服（傾斜）
+// 預留 CH 4~5 給額外伺服
 
 // =====================================================
 //  手臂角度設定（依實際組裝調整）
@@ -98,18 +99,30 @@ const int CLAW_OPEN = 40;   // 張開角度
 const int CLAW_CLOSE = 110; // 閉合角度
 const int CLAW_HOME = 40;
 
+// 承物台（可傾斜式）
+int trayAngle = 0;
+const int TRAY_FLAT = 0;  // 水平（收納）
+const int TRAY_TILT = 60; // 傾斜（倒料）
+const int TRAY_HOME = 0;
+
 // =====================================================
 //  速度設定
 // =====================================================
-const int SPEED_FULL = 200; // 全速 PWM 值 (0~255)
-const int SPEED_HALF = 120; // 半速 PWM 值
-const int SPEED_TURN = 150; // 轉向速度
-const int RAMP_STEP = 10;   // 加減速每次增量
-const int RAMP_DELAY = 15;  // 加減速間隔 (ms)
+const int SPEED_FULL = 200;             // 全速 PWM 值 (0~255)
+const int SPEED_HALF = 120;             // 半速 PWM 值
+const int SPEED_TURN = 150;             // 轉向速度
+const int RAMP_STEP = 10;               // 加減速每次增量
+const int RAMP_DELAY = 15;              // 加減速間隔 (ms)
+const unsigned long RAMP_INTERVAL = 15; // 非阻塞加減速間隔 (ms)
 
 // 當前馬達速度追蹤（用於平滑加減速）
 int currentSpeedL = 0;
 int currentSpeedR = 0;
+
+// 非阻塞加減速目標速度
+int targetSpeedL = 0;
+int targetSpeedR = 0;
+unsigned long lastRampTime = 0;
 
 // 電壓監測計時
 unsigned long lastVoltageCheck = 0;
@@ -147,26 +160,26 @@ public:
       digitalWrite(pinIN2, LOW);
     }
     _currentSpeed = speed;
-    int pwm = constrain(abs(speed), 0, 255);
-    analogWrite(pinEN, pwm);
+    int pwmVal = constrain(abs(speed), 0, 255);
+    analogWrite(pinEN, pwmVal);
   }
 
-  // 平滑加減速到目標速度（避免突然啟停衝擊機構）
-  void rampTo(int targetSpeed) {
-    while (_currentSpeed != targetSpeed) {
-      if (_currentSpeed < targetSpeed) {
-        _currentSpeed = min(_currentSpeed + RAMP_STEP, targetSpeed);
-      } else {
-        _currentSpeed = max(_currentSpeed - RAMP_STEP, targetSpeed);
-      }
-      setSpeed(_currentSpeed);
-      delay(RAMP_DELAY);
+  // 非阻塞式加減速：每次呼叫走一步，回傳是否已到達目標
+  bool rampStep(int targetSpeed) {
+    if (_currentSpeed == targetSpeed)
+      return true;
+    if (_currentSpeed < targetSpeed) {
+      _currentSpeed = min(_currentSpeed + RAMP_STEP, targetSpeed);
+    } else {
+      _currentSpeed = max(_currentSpeed - RAMP_STEP, targetSpeed);
     }
+    setSpeed(_currentSpeed);
+    return (_currentSpeed == targetSpeed);
   }
 
   int getCurrentSpeed() { return _currentSpeed; }
 
-  void stop() { rampTo(0); }
+  void stop() { setSpeed(0); }
 };
 
 // 建立馬達物件
@@ -199,6 +212,9 @@ void checkBattery() {
     stopWalking();
     armHome();
     Serial.println(F("!!! CRITICAL: Battery too low! Shutting down."));
+    Serial1.print(F("!LOW_BAT:"));
+    Serial1.print(voltage, 1);
+    Serial1.println(F("V SHUTDOWN!"));
     // 快速閃爍 LED 警告
     while (true) {
       digitalWrite(LED_PIN, HIGH);
@@ -212,6 +228,10 @@ void checkBattery() {
       Serial.print(F("WARNING: Low battery = "));
       Serial.print(voltage, 1);
       Serial.println(F("V"));
+      // 透過藍芽通知操作員
+      Serial1.print(F("!LOW_BAT:"));
+      Serial1.print(voltage, 1);
+      Serial1.println(F("V"));
     }
     // 慢速閃爍提醒
     digitalWrite(LED_PIN, (millis() / 500) % 2);
@@ -224,39 +244,49 @@ void checkBattery() {
 // =====================================================
 //  步行控制函式
 // =====================================================
+// 設定目標速度（非阻塞，由 updateRamp() 逐步執行）
 void walkForward(int speed) {
-  motorLeft.rampTo(speed);
-  motorRight.rampTo(speed);
+  targetSpeedL = speed;
+  targetSpeedR = speed;
 }
 
 void walkBackward(int speed) {
-  motorLeft.rampTo(-speed);
-  motorRight.rampTo(-speed);
+  targetSpeedL = -speed;
+  targetSpeedR = -speed;
 }
 
 void turnLeft(int speed) {
-  motorLeft.setSpeed(speed / 3); // 左側慢
-  motorRight.setSpeed(speed);    // 右側快
+  targetSpeedL = speed / 3; // 左側慢
+  targetSpeedR = speed;     // 右側快
 }
 
 void turnRight(int speed) {
-  motorLeft.setSpeed(speed);      // 左側快
-  motorRight.setSpeed(speed / 3); // 右側慢
+  targetSpeedL = speed;     // 左側快
+  targetSpeedR = speed / 3; // 右側慢
 }
 
 void spinLeft(int speed) {
-  motorLeft.setSpeed(-speed); // 左側反轉
-  motorRight.setSpeed(speed); // 右側正轉
+  targetSpeedL = -speed; // 左側反轉
+  targetSpeedR = speed;  // 右側正轉
 }
 
 void spinRight(int speed) {
-  motorLeft.setSpeed(speed);   // 左側正轉
-  motorRight.setSpeed(-speed); // 右側反轉
+  targetSpeedL = speed;  // 左側正轉
+  targetSpeedR = -speed; // 右側反轉
 }
 
 void stopWalking() {
-  motorLeft.stop();
-  motorRight.stop();
+  targetSpeedL = 0;
+  targetSpeedR = 0;
+}
+
+// 非阻塞加減速更新（在 loop() 中每次呼叫）
+void updateRamp() {
+  if (millis() - lastRampTime >= RAMP_INTERVAL) {
+    lastRampTime = millis();
+    motorLeft.rampStep(targetSpeedL);
+    motorRight.rampStep(targetSpeedR);
+  }
 }
 
 // =====================================================
@@ -266,9 +296,11 @@ void armHome() {
   shoulderAngle = SHOULDER_HOME;
   elbowAngle = ELBOW_HOME;
   clawAngle = CLAW_HOME;
+  trayAngle = TRAY_HOME;
   setServo(CH_SHOULDER, shoulderAngle);
   setServo(CH_ELBOW, elbowAngle);
   setServo(CH_CLAW, clawAngle);
+  setServo(CH_TRAY, trayAngle);
 }
 
 void shoulderUp() {
@@ -301,6 +333,17 @@ void clawOpen() {
 void clawClose() {
   clawAngle = CLAW_CLOSE;
   setServo(CH_CLAW, clawAngle);
+}
+
+// 承物台控制
+void trayTilt() {
+  trayAngle = TRAY_TILT;
+  setServo(CH_TRAY, trayAngle);
+}
+
+void trayFlat() {
+  trayAngle = TRAY_FLAT;
+  setServo(CH_TRAY, trayAngle);
 }
 
 // =====================================================
@@ -337,6 +380,9 @@ void setup() {
 //  Main Loop — 接收藍芽指令並執行
 // =====================================================
 void loop() {
+  // 非阻塞加減速更新
+  updateRamp();
+
   // 定期檢測電池電壓
   if (millis() - lastVoltageCheck > VOLTAGE_CHECK_INTERVAL) {
     lastVoltageCheck = millis();
@@ -405,6 +451,14 @@ void loop() {
       break;
     case 'h':
       armHome();
+      break;
+
+    // --------- 承物台控制 ---------
+    case 't':
+      trayTilt();
+      break;
+    case 'y':
+      trayFlat();
       break;
 
     // --------- 狀態查詢 ---------
