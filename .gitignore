@@ -22,7 +22,6 @@ Desktop.ini
 # --- IDE / Editor ---
 .vscode/
 .idea/
-.clangd
 *.code-workspace
 *.sublime-*
 
