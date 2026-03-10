@@ -210,6 +210,9 @@ void checkBattery() {
   if (voltage < CRITICAL_VOLTAGE) {
     // 強制停機：電壓過低會損壞鋰電池
     stopWalking();
+    // 立刻切斷左右馬達輸出，不等待 updateRamp()。
+    motorLeft.stop();
+    motorRight.stop();
     armHome();
     Serial.println(F("!!! CRITICAL: Battery too low! Shutting down."));
     Serial1.print(F("!LOW_BAT:"));

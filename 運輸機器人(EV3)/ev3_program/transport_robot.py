@@ -184,6 +184,15 @@ def read_line_position():
     left_val  = sensor_left.reflection()
     right_val = sensor_right.reflection()
     error = left_val - right_val
+
+    # 兩顆感測器都高於閾值代表可能脫線，改用上一個偏差方向找回黑線。
+    if left_val > LINE_THRESHOLD and right_val > LINE_THRESHOLD:
+        if pid.last_error > 0:
+            return LINE_THRESHOLD
+        if pid.last_error < 0:
+            return -LINE_THRESHOLD
+        return 0
+
     return error
 
 
@@ -253,12 +262,19 @@ def main():
     cal_timer = StopWatch()
     do_calibrate = False
     while cal_timer.time() < 3000:
+        left_ref = sensor_left.reflection()
+        right_ref = sensor_right.reflection()
+        show_status(
+            "Calibrate? C=Yes",
+            "L:{} R:{}".format(left_ref, right_ref),
+            "Thr:{} U=Skip".format(LINE_THRESHOLD)
+        )
         if Button.CENTER in ev3.buttons.pressed():
             do_calibrate = True
             break
         if Button.UP in ev3.buttons.pressed():
             break
-        wait(50)
+        wait(100)
     
     if do_calibrate:
         calibrate_sensors()
