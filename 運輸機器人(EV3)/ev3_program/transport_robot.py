@@ -13,9 +13,7 @@
  5. 偵測到紅色停止線 → 停車等待下一輪
 
  感測器配置：
- - Port 1：左顏色感測器（循跡用）
- - Port 2：右顏色感測器（循跡用）
- - Port 3：前方顏色感測器（停止線偵測）
+ - Port 1：前下顏色感測器（循跡與標線偵測）
  - Port 4：觸碰感測器（啟動/零件偵測）
 
  馬達配置：
@@ -47,9 +45,7 @@ AXLE_TRACK     = 120  # mm（左右輪距）
 robot = DriveBase(motor_left, motor_right, WHEEL_DIAMETER, AXLE_TRACK)
 
 # 感測器
-sensor_left  = ColorSensor(Port.S1)   # 左循跡
-sensor_right = ColorSensor(Port.S2)   # 右循跡
-sensor_front = ColorSensor(Port.S3)   # 停止線偵測
+sensor_line = ColorSensor(Port.S1)    # 循跡與停止線偵測
 touch_sensor = TouchSensor(Port.S4)   # 觸碰感測器
 
 # =====================================================
@@ -148,26 +144,22 @@ def calibrate_sensors():
     while Button.CENTER not in ev3.buttons.pressed():
         wait(50)
     wait(300)  # debounce
-    white_left = sensor_left.reflection()
-    white_right = sensor_right.reflection()
+    white_val = sensor_line.reflection()
     ev3.speaker.beep(frequency=600, duration=200)
 
     show_status("Calibration", "Place on BLACK", "Press Center")
     while Button.CENTER not in ev3.buttons.pressed():
         wait(50)
     wait(300)  # debounce
-    black_left = sensor_left.reflection()
-    black_right = sensor_right.reflection()
+    black_val = sensor_line.reflection()
     ev3.speaker.beep(frequency=800, duration=200)
 
     # 取白與黑的中間值作為閾值
-    white_avg = (white_left + white_right) / 2
-    black_avg = (black_left + black_right) / 2
-    LINE_THRESHOLD = int((white_avg + black_avg) / 2)
+    LINE_THRESHOLD = int((white_val + black_val) / 2)
 
     show_status(
         "Cal Done!",
-        "W:{} B:{}".format(int(white_avg), int(black_avg)),
+        "W:{} B:{}".format(int(white_val), int(black_val)),
         "Thr:{}".format(LINE_THRESHOLD)
     )
     wait(1500)
@@ -178,48 +170,47 @@ def calibrate_sensors():
 # =====================================================
 def read_line_position():
     """
-    讀取左右感測器的反射值，計算偏差。
-    回傳值：負 = 偏左, 0 = 正中, 正 = 偏右
+    讀取感測器的反射值，計算與目標閾值的誤差。
+    左側邊緣循跡：
+    - 偏白 (reflection > threshold) -> 誤差為正 -> 需右轉 (正修正)
+    - 偏黑 (reflection < threshold) -> 誤差為負 -> 需左轉 (負修正)
     """
-    left_val  = sensor_left.reflection()
-    right_val = sensor_right.reflection()
-    error = left_val - right_val
+    val = sensor_line.reflection()
+    error = val - LINE_THRESHOLD
+    return error, val
 
-    # 兩顆感測器都高於閾值代表可能脫線，改用上一個偏差方向找回黑線。
-    if left_val > LINE_THRESHOLD and right_val > LINE_THRESHOLD:
-        if pid.last_error > 0:
-            return LINE_THRESHOLD
-        if pid.last_error < 0:
-            return -LINE_THRESHOLD
-        return 0
-
-    return error
-
-
-def check_stop_line():
+def check_stop_color():
     """
-    檢測前方感測器是否偵測到停止線。
-    回傳顏色：Color.YELLOW, Color.RED, 或 None
+    檢測目前感測器下方的顏色。
+    回傳：Color.YELLOW, Color.RED, 或 None
     """
-    color = sensor_front.color()
-    if color == Color.YELLOW:
+    c = sensor_line.color()
+    if c == Color.YELLOW:
         return Color.YELLOW
-    elif color == Color.RED:
+    elif c == Color.RED:
         return Color.RED
     return None
 
-
 def follow_line():
     """
-    執行一步 PID 循跡。
+    執行一步單感測器 PID 左緣循跡。
     回傳偵測到的停止線顏色，沒有則回傳 None。
+    為了避免頻繁切換 reflection/color 導致卡頓，
+    只在 reflection 值極度偏離黑白典型值（例如遇到了黃色或紅色）
+    或定時檢測時才讀取 color。
     """
-    error = read_line_position()
+    error, ref_val = read_line_position()
     correction = pid.compute(error)
     
-    robot.drive(BASE_SPEED, correction * 2)  # DriveBase: (speed, turn_rate)
+    # 執行轉向 (速度, 轉向率)
+    robot.drive(BASE_SPEED, correction * 2)
     
-    return check_stop_line()
+    # 簡易特徵過濾：黃色/紅色的反射率通常不會是完美的 0 (黑) 或 100 (白)，
+    # 這裡我們選擇每 10 次執行 1 次顏色檢測，或是當反射值處於曖昧區間時檢測。
+    # 為了程式穩定性，最安全的做法是直接在循跡中定期讀取，但 EV3 顏色切換較慢。
+    # 折衷方案：直接讓主迴圈呼叫 check_stop_color。
+    # 這裡將顏色判斷保留為獨立函式，或在此處強制偵測。
+    return check_stop_color()
 
 
 def place_parts():
@@ -262,11 +253,10 @@ def main():
     cal_timer = StopWatch()
     do_calibrate = False
     while cal_timer.time() < 3000:
-        left_ref = sensor_left.reflection()
-        right_ref = sensor_right.reflection()
+        val = sensor_line.reflection()
         show_status(
             "Calibrate? C=Yes",
-            "L:{} R:{}".format(left_ref, right_ref),
+            "Ref: {}".format(val),
             "Thr:{} U=Skip".format(LINE_THRESHOLD)
         )
         if Button.CENTER in ev3.buttons.pressed():
