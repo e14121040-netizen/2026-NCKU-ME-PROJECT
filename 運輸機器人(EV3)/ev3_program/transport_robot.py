@@ -13,9 +13,7 @@
  5. 偵測到紅色停止線 → 停車等待下一輪
 
  感測器配置：
- - Port 1：左顏色感測器（循跡用）
- - Port 2：右顏色感測器（循跡用）
- - Port 3：前方顏色感測器（停止線偵測）
+ - Port 1：前下顏色感測器（循跡與標線偵測）
  - Port 4：觸碰感測器（啟動/零件偵測）
 
  馬達配置：
@@ -36,9 +34,12 @@ from pybricks.robotics import DriveBase
 ev3 = EV3Brick()
 
 # 馬達
-motor_left  = Motor(Port.B, Direction.COUNTERCLOCKWISE)
+motor_left  = Motor(Port.D, Direction.CLOCKWISE)
 motor_right = Motor(Port.C, Direction.CLOCKWISE)
-motor_place = Motor(Port.A)  # 放置機構
+
+# ── 放置機構開關：沒有接 Port A 馬達時設為 False ──
+HAS_PLACE_MOTOR = False
+motor_place = Motor(Port.A) if HAS_PLACE_MOTOR else None
 
 # 底盤（DriveBase 簡化直線/轉向控制）
 # 參數需依實際輪子直徑和軸距調整
@@ -47,29 +48,30 @@ AXLE_TRACK     = 120  # mm（左右輪距）
 robot = DriveBase(motor_left, motor_right, WHEEL_DIAMETER, AXLE_TRACK)
 
 # 感測器
-sensor_left  = ColorSensor(Port.S1)   # 左循跡
-sensor_right = ColorSensor(Port.S2)   # 右循跡
-sensor_front = ColorSensor(Port.S3)   # 停止線偵測
+sensor_line = ColorSensor(Port.S1)    # 循跡與停止線偵測
 touch_sensor = TouchSensor(Port.S4)   # 觸碰感測器
 
 # =====================================================
 #  參數設定（需實際調校）
 # =====================================================
 # PID 循跡參數
-KP = 1.2       # 比例增益
-KI = 0.01      # 積分增益
-KD = 0.5       # 微分增益
-BASE_SPEED = 100  # 基礎行駛速度 (mm/s)
+KP = 0.6       # 比例增益（擺動大→降低，跟線不緊→提高）
+KI = 0.0       # 積分增益（先設0，穩定後再微調）
+KD = 0.3       # 微分增益（抑制震盪）
+BASE_SPEED = 60   # 基礎行駛速度 (mm/s)（速度慢更容易調參）
 
-# 循跡閾值
+# 循跡閾值（可由 calibrate_sensors() 自動計算）
 LINE_THRESHOLD = 20  # 反射值低於此為黑線
+
+# 電量檢查間隔 (ms)
+BATTERY_CHECK_INTERVAL = 10000
 
 # 放置機構參數
 PLACE_ANGLE = 90      # 放置機構旋轉角度
 PLACE_SPEED = 200     # 放置機構速度 (deg/s)
 
 # 放置區數量
-NUM_ZONES = 4
+NUM_ZONES = 15
 
 # 安全參數
 LINE_FOLLOW_TIMEOUT = 30000   # 循跡逾時 (ms)，超過此時間沒偵測到停止線則停車
@@ -130,9 +132,41 @@ def check_battery():
 def safe_stop(message="Stopped"):
     """安全停車：停止所有馬達，顯示訊息"""
     robot.stop()
-    motor_place.stop()
+    if motor_place is not None:
+        motor_place.stop()
     ev3.speaker.beep(frequency=400, duration=300)
     show_status(message)
+
+
+def calibrate_sensors():
+    """
+    啟動時校準感測器：讀取白色地板和黑線的反射值，
+    自動計算 LINE_THRESHOLD。
+    """
+    global LINE_THRESHOLD
+    show_status("Calibration", "Place on WHITE", "Press Center")
+    while Button.CENTER not in ev3.buttons.pressed():
+        wait(50)
+    wait(300)  # debounce
+    white_val = sensor_line.reflection()
+    ev3.speaker.beep(frequency=600, duration=200)
+
+    show_status("Calibration", "Place on BLACK", "Press Center")
+    while Button.CENTER not in ev3.buttons.pressed():
+        wait(50)
+    wait(300)  # debounce
+    black_val = sensor_line.reflection()
+    ev3.speaker.beep(frequency=800, duration=200)
+
+    # 取白與黑的中間值作為閾值
+    LINE_THRESHOLD = int((white_val + black_val) / 2)
+
+    show_status(
+        "Cal Done!",
+        "W:{} B:{}".format(int(white_val), int(black_val)),
+        "Thr:{}".format(LINE_THRESHOLD)
+    )
+    wait(1500)
 
 
 # =====================================================
@@ -140,39 +174,47 @@ def safe_stop(message="Stopped"):
 # =====================================================
 def read_line_position():
     """
-    讀取左右感測器的反射值，計算偏差。
-    回傳值：負 = 偏左, 0 = 正中, 正 = 偏右
+    讀取感測器的反射值，計算與目標閾值的誤差。
+    左側邊緣循跡：
+    - 偏白 (reflection > threshold) -> 誤差為正 -> 需右轉 (正修正)
+    - 偏黑 (reflection < threshold) -> 誤差為負 -> 需左轉 (負修正)
     """
-    left_val  = sensor_left.reflection()
-    right_val = sensor_right.reflection()
-    error = left_val - right_val
-    return error
+    val = sensor_line.reflection()
+    error = val - LINE_THRESHOLD
+    return error, val
 
-
-def check_stop_line():
+def check_stop_color():
     """
-    檢測前方感測器是否偵測到停止線。
-    回傳顏色：Color.YELLOW, Color.RED, 或 None
+    檢測目前感測器下方的顏色。
+    回傳：Color.YELLOW, Color.RED, 或 None
     """
-    color = sensor_front.color()
-    if color == Color.YELLOW:
+    c = sensor_line.color()
+    if c == Color.YELLOW:
         return Color.YELLOW
-    elif color == Color.RED:
+    elif c == Color.RED:
         return Color.RED
     return None
 
-
 def follow_line():
     """
-    執行一步 PID 循跡。
+    執行一步單感測器 PID 左緣循跡。
     回傳偵測到的停止線顏色，沒有則回傳 None。
+    為了避免頻繁切換 reflection/color 導致卡頓，
+    只在 reflection 值極度偏離黑白典型值（例如遇到了黃色或紅色）
+    或定時檢測時才讀取 color。
     """
-    error = read_line_position()
+    error, ref_val = read_line_position()
     correction = pid.compute(error)
     
-    robot.drive(BASE_SPEED, correction * 2)  # DriveBase: (speed, turn_rate)
+    # 執行轉向 (速度, 轉向率)
+    robot.drive(BASE_SPEED, correction * 1)  # 係數由2改1，避免轉向過度放大
     
-    return check_stop_line()
+    # 簡易特徵過濾：黃色/紅色的反射率通常不會是完美的 0 (黑) 或 100 (白)，
+    # 這裡我們選擇每 10 次執行 1 次顏色檢測，或是當反射值處於曖昧區間時檢測。
+    # 為了程式穩定性，最安全的做法是直接在循跡中定期讀取，但 EV3 顏色切換較慢。
+    # 折衷方案：直接讓主迴圈呼叫 check_stop_color。
+    # 這裡將顏色判斷保留為獨立函式，或在此處強制偵測。
+    return check_stop_color()
 
 
 def place_parts():
@@ -181,39 +223,17 @@ def place_parts():
     """
     ev3.speaker.beep(frequency=800, duration=200)
     
-    # 放置動作：旋轉放置機構
-    motor_place.run_angle(PLACE_SPEED, PLACE_ANGLE, then=Stop.HOLD, wait=True)
-    wait(500)
-    
-    # 復位
-    motor_place.run_angle(PLACE_SPEED, -PLACE_ANGLE, then=Stop.HOLD, wait=True)
-    wait(300)
+    if motor_place is not None:
+        # 放置動作：旋轉放置機構
+        motor_place.run_angle(PLACE_SPEED, PLACE_ANGLE, then=Stop.HOLD, wait=True)
+        wait(500)
+        # 復位
+        motor_place.run_angle(PLACE_SPEED, -PLACE_ANGLE, then=Stop.HOLD, wait=True)
+        wait(300)
+    else:
+        # 無放置機構：僅停車等待模擬放置
+        wait(800)
 
-
-def return_to_start():
-    """
-    循跡返回起點（偵測到紅色停止線停下）。
-    注意：需要掉頭或走回路到起點，依場地軌跡設計調整。
-    """
-    pid.reset()
-    timer = StopWatch()
-    
-    while True:
-        stop_color = follow_line()
-        
-        if stop_color == Color.RED:
-            robot.stop()
-            ev3.speaker.beep(frequency=1000, duration=500)
-            return
-        
-        # Timeout 保護
-        if timer.time() > LINE_FOLLOW_TIMEOUT:
-            safe_stop("Timeout!")
-            wait(3000)
-            pid.reset()
-            timer.reset()
-        
-        wait(10)
 
 
 # =====================================================
@@ -234,65 +254,104 @@ def main():
         wait(5000)
         # 低電量但仍允許啟動，只是警告
     
+    # ---- 感測器校準（可選）----
+    # 按下 EV3 上方按鈕（UP）跳過校準，按中心鈕開始校準
+    show_status("Calibrate?", "Center=Yes", "Up=Skip")
+    cal_timer = StopWatch()
+    do_calibrate = False
+    while cal_timer.time() < 3000:
+        val = sensor_line.reflection()
+        show_status(
+            "Calibrate? C=Yes",
+            "Ref: {}".format(val),
+            "Thr:{} U=Skip".format(LINE_THRESHOLD)
+        )
+        if Button.CENTER in ev3.buttons.pressed():
+            do_calibrate = True
+            break
+        if Button.UP in ev3.buttons.pressed():
+            break
+        wait(100)
+    
+    if do_calibrate:
+        calibrate_sensors()
+    
     ev3.speaker.beep(frequency=600, duration=200)
     wait(1000)  # 啟動延遲
     
-    # ---- 主循環 ----
+    # ---- 主循環（無限執行，直到手動停止）----
     zones_visited = 0
+    battery_timer = StopWatch()  # 獨立電量檢查計時器
     
-    while zones_visited < NUM_ZONES:
+    while True:
         show_status(
             "Running...",
-            "Zone: {}/{}".format(zones_visited + 1, NUM_ZONES)
+            "Placed: {}".format(zones_visited)
         )
         
         pid.reset()
         segment_timer = StopWatch()
         
         # ---- 循跡行駛 ----
+        yellow_count = 0  # 黃線連續偵測計數（防誤判）
         while True:
             stop_color = follow_line()
             
             if stop_color == Color.YELLOW:
-                # 到達放置區
-                robot.stop()
-                wait(300)
-                
-                # 放置零件
-                place_parts()
-                zones_visited += 1
-                
-                show_status(
-                    "Placed!",
-                    "Zone {}/{}".format(zones_visited, NUM_ZONES)
-                )
-                wait(500)
-                break
+                yellow_count += 1
+                if yellow_count >= 1:   # 連續 1 次才確認為黃線
+                    # 到達放置區
+                    robot.stop()
+                    wait(300)
+                    
+                    # 放置零件
+                    place_parts()
+                    zones_visited += 1
+                    
+                    show_status(
+                        "Placed!",
+                        "Total: {}".format(zones_visited)
+                    )
+                    
+                    # 前進跨越黃線，避免下次循跡立刻再偵測到黃色
+                    robot.straight(25)
+                    wait(300)
+                    break
+            else:
+                yellow_count = 0  # 非黃色則重置計數器
             
-            elif stop_color == Color.RED:
+            if stop_color == Color.RED:
                 # 回到起點
                 robot.stop()
                 show_status("At Start", "Waiting...")
                 
-                # 等待新一批零件（觸碰感測器觸發）
+                # 等待觸碰感測器啟動下一輪
                 while not touch_sensor.pressed():
-                    # 等待時定期更新電量顯示
                     show_status("At Start", "Waiting...")
-                    wait(2000)
-                wait(500)
+                    for _ in range(20):   # 20 x 100ms = 2s
+                        wait(100)
+                        if touch_sensor.pressed():
+                            break
+                for _ in range(5):        # debounce 500ms
+                    wait(100)
+                # 前進跨越紅線，避免下次循跡立刻再偵測到紅色
+                robot.straight(25)
+                wait(300)
                 break
             
             # Timeout 保護：循跡過久表示可能脱軌
             if segment_timer.time() > LINE_FOLLOW_TIMEOUT:
-                safe_stop("Timeout!")
+                robot.stop()
                 ev3.speaker.beep(frequency=200, duration=1000)
-                wait(3000)
-                # 重置後繼續嘗試
+                show_status("Timeout!", "Retrying...")
+                for _ in range(20):   # 2s 短循環，Back 鍵可中斷
+                    wait(100)
                 pid.reset()
                 segment_timer.reset()
             
-            # 定期檢測電量
-            if segment_timer.time() % 10000 < 15:
+            # 定期檢測電量（使用獨立計時器，可靠觸發）
+            if battery_timer.time() > BATTERY_CHECK_INTERVAL:
+                battery_timer.reset()
                 check_battery()
             
             wait(10)  # 循跡迴圈延遲

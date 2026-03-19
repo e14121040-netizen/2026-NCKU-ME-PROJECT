@@ -1,6 +1,6 @@
 # App Inventor 遙控 App — 開發指南
 
-> 本文件教你如何用 App Inventor 建立六足機器人的遙控 App。  
+> 本文件教你如何用 App Inventor 建立八足機器人的遙控 App。  
 > 指令字元對照請見 → [App指令對照表.md](App指令對照表.md)
 
 ## 方式一：修改學長的 App（推薦新手）
@@ -20,6 +20,7 @@
 - 藍芽鮑率改為 **38400**
 - 步行指令字元改為 `f/b/l/r/q/e/0`
 - 新增手臂控制按鈕 `u/d/i/k/o/p/h`
+- 新增承物台控制按鈕 `t`（傾斜）/ `y`（水平）
 
 ---
 
@@ -30,7 +31,7 @@
 1. App Inventor → **Start new project** → 命名為 `WalkingRobotController`
 2. Screen 設定：
    - **ScreenOrientation** = Landscape（橫式）
-   - **Title** = `六足遙控`
+   - **Title** = `八足遙控`
 
 ### 第二步：加入藍芽元件
 
@@ -55,6 +56,9 @@
 │   [↺ btn_sl] [↻ btn_sr] [爪開] [爪合]  │
 │                                          │
 │   [速度切換 Switch]    [肘↑] [肘↓]      │
+│                                          │
+│   承物台控制                              │
+│   [傾斜 btn_tilt] [水平 btn_flat]        │
 └──────────────────────────────────────────┘
 ```
 
