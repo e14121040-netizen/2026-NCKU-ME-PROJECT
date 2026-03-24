@@ -52,10 +52,11 @@ touch_sensor = TouchSensor(Port.S4)   # 觸碰感測器
 #  參數設定（需實際調校）
 # =====================================================
 # PID 循跡參數
-KP = 1.2       # 比例增益
-KI = 0.01      # 積分增益
-KD = 0.5       # 微分增益
-BASE_SPEED = 100  # 基礎行駛速度 (mm/s)
+# PID（比例-積分-微分）控制器用於調整機器人沿黑線行駛的轉向
+KP = 1.2       # 比例增益：控制當前誤差的響應強度，值越大轉向越快
+KI = 0.01      # 積分增益：累積過去誤差，消除靜態誤差，值太大会導致振盪
+KD = 0.5       # 微分增益：預測誤差變化趨勢，減少超調，值越大穩定性越好
+BASE_SPEED = 100  # 基礎行駛速度 (mm/s)：機器人前進的基本速度
 
 # 循跡閾值（可由 calibrate_sensors() 自動計算）
 LINE_THRESHOLD = 20  # 反射值低於此為黑線
@@ -78,23 +79,50 @@ MIN_BATTERY_MV = 7000         # EV3 低電量警戒 (mV)
 #  PID 循跡控制器
 # =====================================================
 class PIDController:
-    """PID 控制器用於循跡"""
+    """PID 控制器用於循跡
+    
+    PID（比例-積分-微分）控制器根據當前誤差、累積誤差和誤差變化率
+    計算修正值，用於調整機器人的轉向以保持沿黑線行駛。
+    """
     def __init__(self, kp, ki, kd):
+        """初始化 PID 控制器
+        
+        Args:
+            kp (float): 比例增益
+            ki (float): 積分增益  
+            kd (float): 微分增益
+        """
         self.kp = kp
         self.ki = ki
         self.kd = kd
-        self.integral = 0
-        self.last_error = 0
+        self.integral = 0      # 積分項：累積誤差
+        self.last_error = 0    # 上一次誤差，用於計算微分項
     
     def compute(self, error):
+        """計算 PID 輸出值
+        
+        Args:
+            error (float): 當前誤差值（感測器反射值與閾值之差）
+            
+        Returns:
+            float: PID 計算出的修正值，用於調整轉向
+        """
+        # 積分項累加當前誤差
         self.integral += error
-        # 防止積分飽和
+        # 防止積分飽和（避免積分項過大導致系統不穩定）
         self.integral = max(-1000, min(1000, self.integral))
+        # 微分項：誤差變化率
         derivative = error - self.last_error
+        # 更新上一次誤差
         self.last_error = error
+        # PID 公式：P + I + D
         return self.kp * error + self.ki * self.integral + self.kd * derivative
     
     def reset(self):
+        """重置 PID 控制器狀態
+        
+        清除積分項和上一次誤差，通常在開始新任務時呼叫
+        """
         self.integral = 0
         self.last_error = 0
 
@@ -171,9 +199,15 @@ def calibrate_sensors():
 def read_line_position():
     """
     讀取感測器的反射值，計算與目標閾值的誤差。
-    左側邊緣循跡：
-    - 偏白 (reflection > threshold) -> 誤差為正 -> 需右轉 (正修正)
-    - 偏黑 (reflection < threshold) -> 誤差為負 -> 需左轉 (負修正)
+    
+    使用左側邊緣循跡策略：
+    - 當感測器在白色區域（reflection > threshold）時，誤差為正，表示需要右轉修正
+    - 當感測器在黑色線上（reflection < threshold）時，誤差為負，表示需要左轉修正
+    
+    Returns:
+        tuple: (error, reflection_value)
+            - error (float): 誤差值，用於 PID 計算
+            - reflection_value (int): 原始反射值 (0-100)
     """
     val = sensor_line.reflection()
     error = val - LINE_THRESHOLD
