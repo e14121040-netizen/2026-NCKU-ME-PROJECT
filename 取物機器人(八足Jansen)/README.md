@@ -43,8 +43,6 @@ Arduino MEGA 2560
   右側（足5~8）→ 馬達 B
 ```
 
-## 夾取機構
-
 ## 夾取機構 (Rack and Pinion)
 
 - **夾爪類型**：齒輪齒條雙向平行夾爪 (Rack and Pinion) — 平行版 + 止滑墊

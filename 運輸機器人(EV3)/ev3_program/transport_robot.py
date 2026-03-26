@@ -8,7 +8,7 @@
  任務流程：
  1. 等待啟動（按鈕 or 觸碰感測器）
  2. PID 循跡沿黑線行駛
- 3. 偵測到黃色停止線 → 停車 → 放置零件
+ 3. 偵測到黃色停止線 → 停車 → 啟動輸送帶將零件推落至放置區平台
  4. 繼續循跡或返回起點
  5. 偵測到紅色停止線 → 停車等待下一輪
 
@@ -17,7 +17,7 @@
  - Port 4：觸碰感測器（啟動/零件偵測）
 
  馬達配置：
- - Port A：放置機構馬達（中馬達）
+ - Port A：輸送帶馬達（中馬達，驅動頂部水平輸送帶）
  - Port B：左輪馬達（大馬達）
  - Port C：右輪馬達（大馬達）
 """
@@ -37,9 +37,9 @@ ev3 = EV3Brick()
 motor_left  = Motor(Port.D, Direction.CLOCKWISE)
 motor_right = Motor(Port.C, Direction.CLOCKWISE)
 
-# ── 放置機構開關：沒有接 Port A 馬達時設為 False ──
-HAS_PLACE_MOTOR = False
-motor_place = Motor(Port.A) if HAS_PLACE_MOTOR else None
+# ── 輸送帶開關：沒有接 Port A 馬達時設為 False ──
+HAS_CONVEYOR_MOTOR = False
+motor_conveyor = Motor(Port.A) if HAS_CONVEYOR_MOTOR else None
 
 # 底盤（DriveBase 簡化直線/轉向控制）
 # 參數需依實際輪子直徑和軸距調整
@@ -55,10 +55,10 @@ touch_sensor = TouchSensor(Port.S4)   # 觸碰感測器
 #  參數設定（需實際調校）
 # =====================================================
 # PID 循跡參數
-KP = 1.2       # 比例增益
-KI = 0.01      # 積分增益
-KD = 0.5       # 微分增益
-BASE_SPEED = 100  # 基礎行駛速度 (mm/s)
+KP = 0.6       # 比例增益（擺動大→降低，跟線不緊→提高）
+KI = 0.0       # 積分增益（先設0，穩定後再微調）
+KD = 0.3       # 微分增益（抑制震盪）
+BASE_SPEED = 60   # 基礎行駛速度 (mm/s)（速度慢更容易調參）
 
 # 循跡閾值（可由 calibrate_sensors() 自動計算）
 LINE_THRESHOLD = 20  # 反射值低於此為黑線
@@ -66,9 +66,9 @@ LINE_THRESHOLD = 20  # 反射值低於此為黑線
 # 電量檢查間隔 (ms)
 BATTERY_CHECK_INTERVAL = 10000
 
-# 放置機構參數
-PLACE_ANGLE = 90      # 放置機構旋轉角度
-PLACE_SPEED = 200     # 放置機構速度 (deg/s)
+# 輸送帶參數
+CONVEYOR_SPEED = 300    # 輸送帶馬達轉速 (deg/s)
+CONVEYOR_RUN_TIME = 3000  # 輸送帶運轉時間 (ms)，需依實際帶長調整
 
 # 放置區數量
 NUM_ZONES = 15
@@ -76,6 +76,14 @@ NUM_ZONES = 15
 # 安全參數
 LINE_FOLLOW_TIMEOUT = 30000   # 循跡逾時 (ms)，超過此時間沒偵測到停止線則停車
 MIN_BATTERY_MV = 7000         # EV3 低電量警戒 (mV)
+
+# 顏色校準參數
+COLOR_DIST_THRESHOLD = 35  # RGB Manhattan 距離閾值（|dR|+|dG|+|dB| ≤ 此值則判定為該顏色）
+COLOR_MIN_R = 15           # 最低 R 通道值（排除黑/白地面誤判）
+CALIBRATION_SAMPLES = 10   # 每次校準取樣次數
+red_rgb_ref = (0, 0, 0)    # 紅線 RGB 參考值（校準後更新）
+yellow_rgb_ref = (0, 0, 0) # 黃線 RGB 參考值（校準後更新）
+colors_calibrated = False   # 是否已完成顏色校準
 
 # =====================================================
 #  PID 循跡控制器
@@ -159,8 +167,8 @@ def check_battery():
 def safe_stop(message="Stopped"):
     """安全停車：停止所有馬達，顯示訊息"""
     robot.stop()
-    if motor_place is not None:
-        motor_place.stop()
+    if motor_conveyor is not None:
+        motor_conveyor.stop()
     ev3.speaker.beep(frequency=400, duration=300)
     show_status(message)
 
@@ -196,6 +204,60 @@ def calibrate_sensors():
     wait(1500)
 
 
+def calibrate_colors():
+    """
+    校準紅線和黃線的 RGB 值。
+    使用者分別將感測器放在紅線和黃線上，
+    取多次平均作為判斷的參考值。
+    """
+    global red_rgb_ref, yellow_rgb_ref, colors_calibrated
+
+    # ---- 校準紅線 ----
+    show_status("Color Cal", "Place on RED", "Press Center")
+    while Button.CENTER not in ev3.buttons.pressed():
+        wait(50)
+    wait(300)  # debounce
+
+    r_sum, g_sum, b_sum = 0, 0, 0
+    for _ in range(CALIBRATION_SAMPLES):
+        r, g, b = sensor_line.rgb()
+        r_sum += r
+        g_sum += g
+        b_sum += b
+        wait(50)
+    red_rgb_ref = (r_sum // CALIBRATION_SAMPLES,
+                   g_sum // CALIBRATION_SAMPLES,
+                   b_sum // CALIBRATION_SAMPLES)
+    ev3.speaker.beep(frequency=600, duration=200)
+
+    # ---- 校準黃線 ----
+    show_status("Color Cal", "Place on YELLOW", "Press Center")
+    while Button.CENTER not in ev3.buttons.pressed():
+        wait(50)
+    wait(300)  # debounce
+
+    r_sum, g_sum, b_sum = 0, 0, 0
+    for _ in range(CALIBRATION_SAMPLES):
+        r, g, b = sensor_line.rgb()
+        r_sum += r
+        g_sum += g
+        b_sum += b
+        wait(50)
+    yellow_rgb_ref = (r_sum // CALIBRATION_SAMPLES,
+                      g_sum // CALIBRATION_SAMPLES,
+                      b_sum // CALIBRATION_SAMPLES)
+    ev3.speaker.beep(frequency=800, duration=200)
+
+    colors_calibrated = True
+
+    show_status(
+        "Color Cal Done!",
+        "R:{},{},{}".format(*red_rgb_ref),
+        "Y:{},{},{}".format(*yellow_rgb_ref)
+    )
+    wait(1500)
+
+
 # =====================================================
 #  核心函式
 # =====================================================
@@ -219,14 +281,33 @@ def read_line_position():
 def check_stop_color():
     """
     檢測目前感測器下方的顏色。
+    若已校準顏色，使用 RGB Manhattan 距離比對；否則使用內建 color()。
     回傳：Color.YELLOW, Color.RED, 或 None
     """
-    c = sensor_line.color()
-    if c == Color.YELLOW:
-        return Color.YELLOW
-    elif c == Color.RED:
-        return Color.RED
-    return None
+    if colors_calibrated:
+        r, g, b = sensor_line.rgb()
+        # 排除黑/白地面（R 通道太低表示不是彩色線）
+        if r < COLOR_MIN_R:
+            return None
+        # 計算與紅線參考值的 Manhattan 距離
+        rr, rg, rb = red_rgb_ref
+        dist_red = abs(r - rr) + abs(g - rg) + abs(b - rb)
+        # 計算與黃線參考值的 Manhattan 距離
+        yr, yg, yb = yellow_rgb_ref
+        dist_yellow = abs(r - yr) + abs(g - yg) + abs(b - yb)
+        # 取距離最近且在閾值內的顏色
+        if dist_red <= dist_yellow and dist_red <= COLOR_DIST_THRESHOLD:
+            return Color.RED
+        if dist_yellow < dist_red and dist_yellow <= COLOR_DIST_THRESHOLD:
+            return Color.YELLOW
+        return None
+    else:
+        c = sensor_line.color()
+        if c == Color.YELLOW:
+            return Color.YELLOW
+        elif c == Color.RED:
+            return Color.RED
+        return None
 
 def follow_line():
     """
@@ -252,19 +333,19 @@ def follow_line():
 
 def place_parts():
     """
-    驅動放置機構，將零件放到放置區平台上。
+    啟動頂部輸送帶，將帶面上所有零件推落至放置區平台。
+    馬達以 CONVEYOR_SPEED 正轉 CONVEYOR_RUN_TIME 毫秒後停止。
     """
     ev3.speaker.beep(frequency=800, duration=200)
     
-    if motor_place is not None:
-        # 放置動作：旋轉放置機構
-        motor_place.run_angle(PLACE_SPEED, PLACE_ANGLE, then=Stop.HOLD, wait=True)
-        wait(500)
-        # 復位
-        motor_place.run_angle(PLACE_SPEED, -PLACE_ANGLE, then=Stop.HOLD, wait=True)
+    if motor_conveyor is not None:
+        # 啟動輸送帶：正轉將零件往外側推落
+        motor_conveyor.run(CONVEYOR_SPEED)
+        wait(CONVEYOR_RUN_TIME)
+        motor_conveyor.stop()
         wait(300)
     else:
-        # 無放置機構：僅停車等待模擬放置
+        # 無輸送帶馬達：僅停車等待模擬放置
         wait(800)
 
 
@@ -309,6 +390,22 @@ def main():
     if do_calibrate:
         calibrate_sensors()
     
+    # ---- 顏色校準（紅線 / 黃線）----
+    show_status("Color Cal?", "Center=Yes", "Up=Skip")
+    cal_color_timer = StopWatch()
+    do_color_cal = False
+    while cal_color_timer.time() < 3000:
+        show_status("Color Cal?", "Center=Yes", "Up=Skip")
+        if Button.CENTER in ev3.buttons.pressed():
+            do_color_cal = True
+            break
+        if Button.UP in ev3.buttons.pressed():
+            break
+        wait(100)
+    
+    if do_color_cal:
+        calibrate_colors()
+    
     ev3.speaker.beep(frequency=600, duration=200)
     wait(1000)  # 啟動延遲
     
@@ -347,7 +444,7 @@ def main():
                     )
                     
                     # 前進跨越黃線，避免下次循跡立刻再偵測到黃色
-                    robot.straight(25)
+                    robot.straight(10)
                     wait(300)
                     break
             else:
@@ -368,7 +465,7 @@ def main():
                 for _ in range(5):        # debounce 500ms
                     wait(100)
                 # 前進跨越紅線，避免下次循跡立刻再偵測到紅色
-                robot.straight(25)
+                robot.straight(10)
                 wait(300)
                 break
             
