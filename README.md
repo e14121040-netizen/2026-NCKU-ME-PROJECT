@@ -53,10 +53,10 @@
 - **目標**：一次處理兩筆訂單
 
 ### 電控系統
-- **主控**：Arduino MEGA 2560
-- **通訊**：HC-05 藍芽模組 ← 手機 App (App Inventor)
+- **主控**：ESP32（主控板）+ ESP32 C3（夾爪子控板）
+- **通訊**：ESP-NOW（點對點無線通訊）+ ESP32 內建藍芽 ← 手機遙控 App
 - **馬達驅動**：L298N（步行）、PCA9685 + MG996R 伺服（手臂）
-- **供電**：11.1V 鋰電池 + LM2596 降壓板
+- **供電**：18650 鋰電池 × 4
 
 ## 🚚 運輸機器人
 
@@ -188,16 +188,16 @@ gantt
 
 | 工具 | 用途 |
 |------|------|
-| [Arduino IDE](https://www.arduino.cc/en/software) 或 [VS Code + Arduino 擴充](https://marketplace.visualstudio.com/items?itemName=vsciot-vscode.vscode-arduino) | 取物機器人程式開發 |
-| [App Inventor](https://appinventor.mit.edu/) | 遙控 App 開發 |
+| [Arduino IDE](https://www.arduino.cc/en/software) 或 [PlatformIO](https://platformio.org/) | 取物機器人 ESP32 程式開發 |
+| ESP32 遙控 App | 遙控 App |
 | [EV3 MicroPython](https://pybricks.com/ev3-micropython/) | 運輸機器人程式開發 |
 | SolidWorks / Fusion 360 | 機構 3D 建模 |
 
 ## 📊 開發進度（與[開發步驟指南](開發步驟指南.md)同步）
 
 ### 階段 0：環境準備與採購
-- [ ] 軟體安裝（Arduino IDE 或 VS Code + Arduino 擴充 / App Inventor / VS Code + EV3 / Python）
-- [ ] Arduino 函式庫安裝（Adafruit PWM Servo Driver）
+- [ ] 軟體安裝（Arduino IDE 或 PlatformIO / ESP32 遙控 App / VS Code + EV3 / Python）
+- [ ] ESP32 開發環境設定（安裝 ESP32 Board 支援）
 - [ ] 零件採購（取物機器人 + 運輸機器人）
 - [ ] 學長 `.aia` 檔案已下載並可開啟
 
@@ -209,15 +209,15 @@ gantt
 
 ### 階段 2：取物機器人 — 電控接線
 - [ ] L298N + 直流馬達接線完成
-- [ ] HC-05 藍芽連線測試
-- [x] Arduino 主程式完成（`walking_robot.ino`）
+- [ ] ESP32 ESP-NOW 通訊測試
+- [x] ESP32 主程式完成
 - [ ] PCA9685 + 伺服馬達接線測試
 
 ### 階段 3：取物機器人 — 遙控 App
-- [ ] App Inventor 完成遙控 App
+- [ ] ESP32 藍芽遙控 App 完成
 - [ ] 步行按鈕（按住/放開）測試通過
 - [ ] 手臂按鈕測試通過
-- [ ] 匯出 `.apk` 安裝到手機
+- [ ] App 安裝到手機
 
 ### 階段 4：取物機器人 — 手臂整合
 - [ ] 手臂結構設計 + 加工
@@ -247,13 +247,13 @@ gantt
 
 | 姓名 | 負責項目 |
 |------|----------|
-| 鍾沅駿 | 電控 |
-| 陳翊家 | 電控 |
+| 鍾沅駿 | 電控、EV3 |
+| 陳翊家 | 電控、腿部 |
 | 李耿泓 | 夾爪 |
 | 吳昆哲 | 夾爪 |
 | 詹澄汯 | 夾爪 |
-| 王子睿 | 底盤 |
-| 陳昱辰 | 底盤 |
+| 王子睿 | 腿部 |
+| 陳昱辰 | EV3 |
 
 ## 📄 授權
 
