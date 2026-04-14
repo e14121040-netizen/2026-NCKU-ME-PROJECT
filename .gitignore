@@ -6,6 +6,9 @@
 .agent/
 .gemini/
 
+# --- Git worktrees ---
+.worktrees/
+
 # --- macOS ---
 .DS_Store
 ._*
