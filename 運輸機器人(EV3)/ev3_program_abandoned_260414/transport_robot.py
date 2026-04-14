@@ -22,9 +22,69 @@
 - Port C：右輪馬達（大馬達）
 """
 
-import threading
-import queue
-from typing import override
+from threading import Thread
+
+try:
+    from typing import cast
+except ImportError:
+
+    def _cast(typ, val):
+        return val
+
+    globals().update({"cast": _cast})
+
+try:
+    from threading import Lock, Event
+except ImportError:
+    import _thread
+
+    # threading.Event 的簡易版本
+    class _Event:
+        def __init__(self) -> None:
+            self._lock = _thread.allocate_lock()
+            self._flag = False
+
+        def is_set(self):
+            return self._flag
+
+        def set(self):
+            with self._lock:
+                self._flag = True
+
+        def clear(self):
+            with self._lock:
+                self._flag = False
+
+    globals().update({"Lock": _thread.allocate_lock, "Event": _Event})
+
+try:
+    from queue import Queue
+except ImportError:
+
+    class _Queue:
+        def __init__(self):
+            self.value = None
+            self.has_value = False
+            self.lock = Lock()
+
+        def put_nowait(self, item):
+            with self.lock:
+                self.value = item  # 直接覆蓋
+                self.has_value = True
+
+        def get_nowait(self):
+            with self.lock:
+                if not self.has_value:
+                    raise Exception("Empty")
+                self.has_value = False
+                return self.value
+
+        def empty(self):
+            with self.lock:
+                return not self.has_value
+
+    globals().update({"Queue": _Queue})
+
 
 from pybricks.hubs import EV3Brick
 from pybricks.ev3devices import Motor, ColorSensor, TouchSensor
@@ -114,7 +174,7 @@ class PIDController:
 # =====================================================
 
 
-class Drive(DriveBase):
+class Drive:
     def __init__(
         self,
         left_motor: Motor,
@@ -123,7 +183,7 @@ class Drive(DriveBase):
         axle_track: int,
         # --------
         color_sensor: ColorSensor,
-        color_sensor_lock: threading.Lock,
+        color_sensor_lock: "Lock",
         pid: PIDController,
     ):
         """初始化底盤與循跡所需資源。
@@ -138,17 +198,24 @@ class Drive(DriveBase):
             pid: PID 控制器。
         """
 
-        super().__init__(left_motor, right_motor, wheel_diameter, axle_track)
+        assert left_motor != right_motor
+
+        self._drive = DriveBase(
+            left_motor=left_motor,
+            right_motor=right_motor,
+            wheel_diameter=wheel_diameter,
+            axle_track=axle_track,
+        )
 
         self._left_motor = left_motor
         self._right_motor = right_motor
 
         # 停止車輛事件
-        self._pause_event = threading.Event()
+        self._pause_event = Event()
 
-        self._stop_target_distance_lock = threading.Lock()
+        self._stop_target_distance_lock = Lock()
         # 到定點後的額外移動距離
-        self._stop_target_distance: int | None = None
+        self._stop_target_distance = cast("int | None", None)
 
         # 設定初始化狀態為停車
         self._pause_event.set()
@@ -187,9 +254,9 @@ class Drive(DriveBase):
         turn_rate = int(correction * 1)
 
         # 執行轉向 (速度, 轉向率)
-        self.drive(drive_speed, turn_rate)
+        self._drive.drive(drive_speed, turn_rate)
 
-    def loop(self, end_event: threading.Event, error_queue: queue.Queue):
+    def loop(self, end_event: Event, error_queue: Queue):
         """外部呼叫的循線主迴圈。
 
         Args:
@@ -208,7 +275,7 @@ class Drive(DriveBase):
                     stop_target = self._stop_target_distance
 
                 if stop_target is not None:
-                    if self.distance() >= stop_target:
+                    if self._drive.distance() >= stop_target:
                         with self._stop_target_distance_lock:
                             self._stop_target_distance = None
                         self._pause_event.set()
@@ -223,7 +290,7 @@ class Drive(DriveBase):
 
                 wait(10)
 
-            super().stop()
+            self._drive.stop()
         except Exception as ex:
             error_queue.put_nowait(ex)
 
@@ -235,7 +302,6 @@ class Drive(DriveBase):
             # 捨棄掉沒走完的額外距離
             self._stop_target_distance = None
 
-    @override
     def stop(self, additional_distance: int = 0):
         """停下機器人。
 
@@ -258,7 +324,7 @@ class Drive(DriveBase):
         # 移除暫停標記
         self._pause_event.clear()
 
-        current_distance = self.distance()
+        current_distance = self._drive.distance()
         target_distance = current_distance + int(additional_distance)
 
         with self._stop_target_distance_lock:
@@ -271,7 +337,7 @@ class Drive(DriveBase):
         ev3-micropython 的 `DriveBase.stop` 只會讓 `DriveBase` 停止並放開，
         因此需要對左右馬達做 brake()。
         """
-        super().stop()
+        self._drive.stop()
         self._pause_event.set()
         self._left_motor.brake()
         self._right_motor.brake()
@@ -285,7 +351,7 @@ class Drive(DriveBase):
 class Main:
     """主程式控制流程。"""
 
-    def __init__(self, end_event: threading.Event) -> None:
+    def __init__(self, end_event: Event) -> None:
         """
         初始化主程式所需資源。
 
@@ -305,23 +371,23 @@ class Main:
         self.color_sensor = ColorSensor(Port.S1)  # 顏色傳感器－循跡與停止線偵測
         self.touch_sensor = TouchSensor(Port.S4)  # 觸碰感測器
 
-        self.robot = Drive(
-            self.left_motor,
-            self.right_motor,
-            WHEEL_DIAMETER,
-            AXLE_TRACK,
-            self.color_sensor,
-            self._color_sensor_lock,
-            self._pid,
-        )
-
         # pid 控制
         self._pid = PIDController(KP, KI, KD)
-        self._color_sensor_lock = threading.Lock()
+        self._color_sensor_lock = Lock()
+
+        self.robot = Drive(
+            left_motor=self.left_motor,
+            right_motor=self.right_motor,
+            wheel_diameter=WHEEL_DIAMETER,
+            axle_track=AXLE_TRACK,
+            color_sensor=self.color_sensor,
+            color_sensor_lock=self._color_sensor_lock,
+            pid=self._pid,
+        )
 
         # 顏色感應
-        self._rgb_ref_red: tuple[int, int, int] = RGB_REF_RED
-        self._rgb_ref_yellow: tuple[int, int, int] = RGB_REF_YELLOW
+        self._rgb_ref_red = cast("tuple[int, int, int]", RGB_REF_RED)
+        self._rgb_ref_yellow = cast("tuple[int, int, int]", RGB_REF_YELLOW)
         self._color_calibrated = False
 
         self._end_event = end_event
@@ -505,7 +571,7 @@ class Main:
             return True
         return False
 
-    def battery_loop(self, end_event: threading.Event, error_queue: queue.Queue):
+    def battery_loop(self, end_event: Event, error_queue: Queue):
         """電量監控迴圈。
 
         Args:
@@ -520,7 +586,7 @@ class Main:
         except Exception as ex:
             error_queue.put_nowait(ex)
 
-    def loop(self, end_event: threading.Event, error_queue: queue.Queue):
+    def loop(self, end_event: Event, error_queue: Queue):
         """主流程迴圈。
 
         Args:
@@ -609,9 +675,9 @@ class Main:
 def main():
     """主程式進入點。"""
     # 初始化結束事件，用以強制結束所有循環
-    end_event = threading.Event()
+    end_event = Event()
     # 紀錄線程內發生的錯誤
-    error_queue: queue.Queue[Exception] = queue.Queue()
+    error_queue = cast("Queue[Exception]", Queue())
 
     main = Main(end_event)
 
@@ -640,11 +706,11 @@ def main():
     # 初始化線程
     thread_args = (end_event, error_queue)
     threads = [
-        threading.Thread(target=main.robot.loop, args=thread_args),
-        threading.Thread(target=main.battery_loop, args=thread_args),
+        Thread(target=main.robot.loop, args=thread_args),
+        Thread(target=main.battery_loop, args=thread_args),
     ]
     # 主線程單獨列出來方便檢測
-    main_thread = threading.Thread(target=main.loop, args=thread_args)
+    main_thread = Thread(target=main.loop, args=thread_args)
     threads.append(main_thread)
 
     # 開始所有線程
