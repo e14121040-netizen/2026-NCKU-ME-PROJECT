@@ -1,32 +1,139 @@
-#include <BluetoothSerial.h>
-BluetoothSerial SerialBT;
+#include <WiFi.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
+
+const uint8_t ESPNOW_CHANNEL = 1;
 
 const int freq=30000;
 const int pwmChannel=0;
 const int resolution=8;//8 bit PWM=0~255
 const int leftmotor=0;
 const int rightmotor=1;
-int dutyCycle=200;//speedvalur
+int dutyCycle=200;//speedvalue
 
 
 
 // =========================
 // 左馬達 (L298N Motor A)
 // =========================
-const int Left_Pin1=16;
-const int Left_Pin2=17;
-const int Left_enable=18;
+// ESP32-C3 常用可輸出 GPIO，避開不存在或容易衝突的腳位
+const int Left_Pin1=3;
+const int Left_Pin2=4;
+const int Left_enable=5;
 
 // =========================
 // 右馬達 (L298N Motor B)
 // =========================
-const int Right_Pin1=14;
-const int Right_Pin2=26;
-const int Right_enable=27;
+const int Right_Pin1=6;
+const int Right_Pin2=7;
+const int Right_enable=10;
+
+// =========================
+// 指令列舉
+// =========================
+enum CommandType{
+  CMD_STOP=0,
+  CMD_FORWARD,
+  CMD_BACKWARD,
+  CMD_LEFT,
+  CMD_RIGHT};
+
+//ESP-NOW 傳輸資料格式
+typedef struct now_message{
+  uint8_t command;
+  uint8_t speed;
+}now_message;
+
+typedef struct ack_message{
+  uint8_t command;
+  uint8_t speed;
+  uint8_t status;
+}ack_message;
+
+volatile uint8_t currentCommand=CMD_STOP;
+volatile uint8_t currentSpeed=200;
+bool espNowReady=false;
+uint8_t lastSenderMac[6]={0};
+bool senderKnown=false;
+
+void printMacAddress(const uint8_t *mac){
+  if (mac == nullptr) {
+    Serial.print("null");
+    return;
+  }
+
+  for (int i = 0; i < 6; ++i) {
+    if (mac[i] < 16) {
+      Serial.print('0');
+    }
+    Serial.print(mac[i], HEX);
+    if (i < 5) {
+      Serial.print(':');
+    }
+  }
+}
+
+bool ensurePeerExists(const uint8_t *peerMac){
+  if (peerMac == nullptr) {
+    return false;
+  }
+
+  if (esp_now_is_peer_exist(peerMac)) {
+    return true;
+  }
+
+  esp_now_peer_info_t peerInfo = {};
+  memcpy(peerInfo.peer_addr, peerMac, 6);
+  peerInfo.channel = ESPNOW_CHANNEL;
+  peerInfo.ifidx = WIFI_IF_STA;
+  peerInfo.encrypt = false;
+
+  esp_err_t addResult = esp_now_add_peer(&peerInfo);
+  if (addResult != ESP_OK) {
+    Serial.print("Failed to add sender peer, err=");
+    Serial.println(addResult);
+    return false;
+  }
+
+  Serial.print("Registered sender peer: ");
+  printMacAddress(peerMac);
+  Serial.println();
+  return true;
+}
+
+void sendAck(){
+  if (!senderKnown) {
+    return;
+  }
+
+  if (!ensurePeerExists(lastSenderMac)) {
+    return;
+  }
+
+  ack_message ack = {
+    currentCommand,
+    currentSpeed,
+    1
+  };
+
+  esp_err_t result = esp_now_send(lastSenderMac, (uint8_t *)&ack, sizeof(ack));
+  if (result != ESP_OK) {
+    Serial.print("ACK send failed, err=");
+    Serial.println(result);
+  }
+}
+
 
 // =========================
 // 馬達控制函式
 // =========================
+
+//------馬達速度控制------
+void SetMotorSpeed(int left_speed, int right_speed){
+  ledcWrite(leftmotor,left_speed);
+  ledcWrite(rightmotor,right_speed);
+}
+
 //------停止------
 void StopMotor(){
   digitalWrite(Left_Pin1,LOW);
@@ -35,8 +142,7 @@ void StopMotor(){
   digitalWrite(Right_Pin1,LOW);
   digitalWrite(Right_Pin2,LOW);
 
-  ledcWrite(Left_enable,dutycycle);
-  ledcWrite(Right_enable,dutycycle);
+  SetMotorSpeed(0, 0);
 }
 
 //------前進------
@@ -48,8 +154,18 @@ void Forward(){
   digitalWrite(Right_Pin1,HIGH);
   digitalWrite(Right_Pin2,LOW);
 
-  ledcWrite(Left_enable,dutycycle);
-  ledcWrite(Right_enable,dutycycle);
+  SetMotorSpeed(dutyCycle, dutyCycle);
+}
+
+//------後退------
+void Backward(){
+  digitalWrite(Left_Pin1,LOW);
+  digitalWrite(Left_Pin2,HIGH);
+
+  digitalWrite(Right_Pin1,LOW);
+  digitalWrite(Right_Pin2,HIGH);
+
+  SetMotorSpeed(dutyCycle, dutyCycle);
 }
 
 //左轉: 左邊前進，右邊後退
@@ -60,8 +176,7 @@ void LeftTurn(){
   digitalWrite(Right_Pin1,LOW);
   digitalWrite(Right_Pin2,HIGH);
 
-  ledcWrite(Left_enable,dutycycle);
-  ledWrite(Right_enable,dutycycle);
+  SetMotorSpeed(dutyCycle, dutyCycle);
 }
 
 //右轉: 右邊前進，左邊後退
@@ -72,37 +187,93 @@ void RightTurn(){
   digitalWrite(Right_Pin1,HIGH);
   digitalWrite(Right_Pin2,LOW);
 
-  ledcWrite(Left_enable,dutycycle);
-  ledWrite(Right_enable,dutycycle);
+  SetMotorSpeed(dutyCycle, dutyCycle);
 }
 
+
+// =====================================================
+// ESP-NOW 接收 callback
+// 注意：這裡不要做太耗時的事情
+// =====================================================
+void OnDataRecv(const esp_now_recv_info_t *recvInfo, const uint8_t *incomingData, int len){
+  if (incomingData == nullptr || len != sizeof(now_message)) {
+    Serial.print("Invalid ESP-NOW packet, len=");
+    Serial.println(len);
+    return;
+  }
+
+  now_message incomingMessage;
+  memcpy(&incomingMessage, incomingData, sizeof(incomingMessage));
+
+  if (recvInfo != nullptr && recvInfo->src_addr != nullptr) {
+    memcpy(lastSenderMac, recvInfo->src_addr, 6);
+    senderKnown = true;
+  }
+
+  currentCommand=incomingMessage.command;
+  currentSpeed=incomingMessage.speed;
+
+  Serial.print("Received command=");
+  Serial.print(currentCommand);
+  Serial.print(", speed=");
+  Serial.print(currentSpeed);
+  Serial.print(", from=");
+  printMacAddress(lastSenderMac);
+  Serial.println();
+
+  sendAck();
+}
+
+void setupEspNow(){
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+
+  esp_err_t channelResult = esp_wifi_set_channel(ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  if (channelResult != ESP_OK) {
+    Serial.print("Failed to set WiFi channel, err=");
+    Serial.println(channelResult);
+  }
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+
+  esp_now_register_recv_cb(OnDataRecv);
+  espNowReady=true;
+  Serial.println("ESP-NOW receiver ready");
+}
 
 // =========================
 // 設定對應的角位
 // setup: 開機只執行一次
 // =========================
 void setup() {
-  // 設定GPIO的 I/O模式
-  pinMode(Left_Pin1,Output);
-  pinMode(Left_Pin2,Output);
-  pinMode(Left_enable,Output);
+  //啟動序列埠 (用來debug)
+  Serial.begin(115200);
+  delay(300);
 
-  pinMode(Right_Pin1,Output);
-  pinMode(Right_Pin2,Outout);
-  pinMode(Right_enable,Output)
+  // 設定GPIO的 I/O模式
+  pinMode(Left_Pin1,OUTPUT);
+  pinMode(Left_Pin2,OUTPUT);
+  pinMode(Left_enable,OUTPUT);
+
+  pinMode(Right_Pin1,OUTPUT);
+  pinMode(Right_Pin2,OUTPUT);
+  pinMode(Right_enable,OUTPUT);
   /*設定 ESP32的 LEDC PWM功能:
-    enable1_Pin -> PWM輸出腳位
+    Left_enable / Right_enable -> PWM輸出腳位
     freq -> PWM頻率
     resolution -> PWM解析度
     pwmChannel -> 通道*/
-  ledcAttachChannel(enable1_Pin, freq,resolution,pwmChannel);//esp32 pwm control
-  ledcAttachChannel(enable1_Pin, freq,resolution,pwmChannel);//esp32 pwm control
+  ledcAttachChannel(Left_enable, freq, resolution, leftmotor);//esp32 pwm control
+  ledcAttachChannel(Right_enable, freq, resolution, rightmotor);//esp32 pwm control
 
-  StopMotors();
-
-  //啟動序列埠 (用來debug)
-  Serial.begin(115200);
-  Serial.print("Testing DC Motor...")
+  StopMotor();
+  Serial.println("Testing DC Motor...");
+  Serial.print("Receiver MAC: ");
+  Serial.println(WiFi.macAddress());
+  setupEspNow();
 }
 
 
@@ -111,11 +282,29 @@ void setup() {
 // loop: 重複執行
 // =========================
 void loop() {
+  dutyCycle=currentSpeed;
+
   //按鈕 -> bool值來確定執行
-  bool forwardPress=(digitalRead()==LOW);
-  bool backwardPress=(digitalRead()==LOW);
-  bool LeftPress=(digitalRead()==LOW);
-  bool RightPress=(digitalRead()==LOW);
+  switch (currentCommand){
+    case CMD_STOP:
+      StopMotor();
+      break;
+    case CMD_FORWARD:
+      Forward();
+      break;
+    case CMD_BACKWARD:
+      Backward();
+      break;
+    case CMD_LEFT:
+      LeftTurn();
+      break;
+    case CMD_RIGHT:
+      RightTurn();  
+      break;
+    default:
+      StopMotor();
+      break;
+  }
   
-  //bool value=1 做動
+  delay(20);
 }
