@@ -43,11 +43,14 @@
 BluetoothSerial SerialBT;
 
 // =====================================================
-//  子控板 MAC 地址（需替換為實際 MAC）
+//  子控板 MAC 地址
+//  ⚠ TODO: 將 0xFF 佔位符替換為實際 MAC 地址！
+//  取得方式：上傳 macaddress/macaddress.ino 至各 C3，
+//           開啟 Serial Monitor (115200) 記錄 MAC。
 // =====================================================
 uint8_t Leg_Address[]     = {0x58, 0x8C, 0x81, 0x9D, 0xF6, 0x90};  // C3 #1 腿部
-uint8_t r_theta_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #2 手臂 r/θ
-uint8_t z_clap_Address[]  = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #3 z/夾爪
+uint8_t r_theta_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #2 手臂 r/θ  ⚠ TODO
+uint8_t z_clap_Address[]  = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #3 z/夾爪    ⚠ TODO
 
 // =====================================================
 //  ESP-NOW 資料格式 — 通用指令結構
@@ -253,6 +256,21 @@ void setup() {
   addPeer(z_clap_Address, "C3#3 Z_Claw");
 
   Serial.println();
+
+  // ----- 檢查 MAC 佔位符警告 -----
+  bool hasPlaceholder = true;
+  for (int i = 0; i < 6; i++) {
+    if (r_theta_Address[i] != 0xFF || z_clap_Address[i] != 0xFF) {
+      hasPlaceholder = false;
+      break;
+    }
+  }
+  if (hasPlaceholder) {
+    Serial.println("!! WARNING: C3 #2 and/or C3 #3 MAC still 0xFF!!");
+    Serial.println("!! Upload macaddress.ino to get real MAC addresses.");
+    Serial.println();
+  }
+
   Serial.println("ESP-NOW Initialized. Waiting for BT commands...");
   Serial.println("Use Serial Monitor or Bluetooth App to send commands.");
   Serial.println();

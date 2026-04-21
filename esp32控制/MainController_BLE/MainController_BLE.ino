@@ -52,11 +52,14 @@
 const uint8_t ESPNOW_CHANNEL = 1;
 
 // =====================================================
-//  子控板 MAC 地址（需替換為實際 MAC）
+//  子控板 MAC 地址
+//  ⚠ TODO: 將 0xFF 佔位符替換為實際 MAC 地址！
+//  取得方式：上傳 macaddress/macaddress.ino 至各 C3，
+//           開啟 Serial Monitor (115200) 記錄 MAC。
 // =====================================================
 uint8_t Leg_Address[]     = {0x58, 0x8C, 0x81, 0x9D, 0xF6, 0x90};  // C3 #1 腿部
-uint8_t r_theta_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #2 手臂 r/θ
-uint8_t z_clap_Address[]  = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #3 z/夾爪
+uint8_t r_theta_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #2 手臂 r/θ  ⚠ TODO
+uint8_t z_clap_Address[]  = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #3 z/夾爪    ⚠ TODO
 
 // =====================================================
 //  BLE UART Service UUID
@@ -127,6 +130,7 @@ typedef struct zclaw_now_message {
 // =====================================================
 const uint8_t FULL_SPEED = 200;
 const uint8_t HALF_SPEED = 120;
+uint8_t currentSpeed = FULL_SPEED;  // BLE SPD 指令可動態調整
 
 // =====================================================
 //  BLE 相關變數
@@ -417,8 +421,8 @@ void handleBleCommand(String commandText) {
     int separatorIndex = upperCmd.indexOf(':');
     int parsedSpeed = upperCmd.substring(separatorIndex + 1).toInt();
     parsedSpeed = constrain(parsedSpeed, 0, 255);
-    // 更新所有子控板的預設速度（此處暫存至全域變數，之後發送時使用）
-    notifyBle("Speed set to " + String(parsedSpeed));
+    currentSpeed = (uint8_t)parsedSpeed;
+    notifyBle("Speed set to " + String(currentSpeed));
   }
   // ----- 未知指令 -----
   else {

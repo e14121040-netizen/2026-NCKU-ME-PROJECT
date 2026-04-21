@@ -216,3 +216,27 @@ uint8_t z_clap_Address[]  = {0x??, 0x??, 0x??, 0x??, 0x??, 0x??};  // C3 #3
 - **L298N ENA/ENB 跳線帽**：上傳程式前確認已拔除，否則 PWM 調速無效
 - **伺服馬達供電**：伺服馬達接 5V 穩壓電源（經 LM2596 降壓），不可從 C3 的 3.3V pin 取電
 - **ESP32Servo 函式庫**：`ZClawController` 需要安裝 `ESP32Servo` 函式庫
+- **共用協議**：`protocol.h` 定義了所有 ESP-NOW 通訊的 enum 和 struct，修改指令編號時需同步更新
+
+## 版本需求
+
+| 項目 | 版本要求 | 說明 |
+|------|---------|------|
+| arduino-esp32 | **v3.x** (推薦) | `MainController_BLE` 使用 v3.x 的 `OnDataSent` 新簽名 |
+| arduino-esp32 | v2.x (也可) | `MainController` (BluetoothSerial 版) 相容 v2.x |
+| ESP32Servo | 最新版 | `ZClawController` 伺服控制需要 |
+| Arduino IDE | 2.x | 推薦使用 Arduino IDE 2.x 以獲得更好的 ESP32 支援 |
+
+> ⚠ **注意**：如果 `MainController_BLE` 編譯報錯 `OnDataSent` 參數不匹配，
+> 表示你的 arduino-esp32 版本是 v2.x。請升級到 v3.x，或將 callback 簽名改為：
+> ```cpp
+> void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
+> ```
+
+## 已知限制與注意事項
+
+1. **MAC 地址佔位符**：`MainController` 和 `MainController_BLE` 中的 C3 #2、C3 #3 MAC 仍為 `0xFF` 佔位符，需替換為實際 MAC。啟動時會在 Serial Monitor 顯示警告。
+2. **ESP-NOW 通道**：BLE 版使用固定通道 1（`ESPNOW_CHANNEL = 1`），所有子控板需在同一通道。BluetoothSerial 版使用通道 0。
+3. **BLE + ESP-NOW 共存**：BLE 和 ESP-NOW 共用 Wi-Fi 硬體，在高頻率指令下可能有延遲。
+4. **速度設定**：BLE 版支援 `SPD:xxx` 指令動態調整速度（BluetoothSerial 版使用固定速度）。
+
