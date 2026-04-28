@@ -6,28 +6,42 @@
 ## 系統架構
 
 ```
-手機 App ──BLE──→ ESP32 主控板 (MainController)
-                      │
-          ┌───────────┼───────────┐
-          │           │           │
-     ESP-NOW     ESP-NOW     ESP-NOW
-          │           │           │
-          ▼           ▼           ▼
-     C3 #1 腿部  C3 #2 手臂  C3 #3 z/夾爪
-    (LegController) (noah_夾爪控制測試) (待開發)
+手機 App ──BLE/BT──→ ESP32 主控板 (MainController)
+                       │
+           ┌───────────┼───────────┐
+           │           │           │
+      ESP-NOW     ESP-NOW     ESP-NOW
+           │           │           │
+           ▼           ▼           ▼
+      C3 #1 腿部  C3 #2 手臂  C3 #3 z/夾爪
+   (LegController) (noah_夾爪控制測試) (ZClawController)
 ```
 
 ## 目錄說明
 
 | 目錄 | 控制板 | 說明 | 狀態 |
 |------|--------|------|------|
-| `MainController/` | ESP32 | 主控板：藍芽接收 + ESP-NOW 指令分發 | ✅ 可用 |
+| `MainController/` | ESP32 | 主控板（BluetoothSerial 版）：藍芽接收 + ESP-NOW 指令分發 | ✅ 可用 |
+| `MainController_BLE/` | ESP32 | 主控板（BLE 版）：BLE UART Service + ESP-NOW 指令分發，支援字串指令和 ACK | ✅ 可用 |
 | `LegController/` | ESP32-C3 #1 | 腿部子控板：L298N 驅動步行馬達 ×2（差速轉向） | ✅ 可用 |
-| `noah_夾爪控制測試/` | ESP32-C3 #2 | 手臂 r/θ 子控板：L298N 驅動手臂馬達 ×2 + 限位開關 | ✅ 可用 |
+| `noah_夾爪控制測試/` | ESP32-C3 #2 | 手臂 r/θ 子控板：L298N 驅動手臂馬達 ×2 + 限位開關 ×4 | ✅ 可用 |
+| `ZClawController/` | ESP32-C3 #3 | z/夾爪子控板：L298N 驅動 z 升降馬達 + 伺服馬達（夾爪+蓋板）+ 限位開關 ×2 | ✅ 可用 |
 | `macaddress/` | 任意 ESP32/C3 | 工具程式：印出 MAC 地址（設定 ESP-NOW 時使用） | 🔧 工具 |
 | `Leg_motor_prototype/` | — | 腿部馬達早期原型（含藍芽，已重構至 LegController） | 📦 參考 |
 | `Leg_motor_prototype_button_control/` | — | 腿部馬達按鈕控制原型 | 📦 參考 |
 | `esp32test/` | — | ESP32 基礎測試 | 📦 參考 |
+
+### 主控板版本比較
+
+| 比較項目 | `MainController` (BluetoothSerial) | `MainController_BLE` (BLE UART) |
+|----------|------------------------------------|---------------------------------|
+| 藍芽類型 | Classic Bluetooth | BLE 低功耗藍芽 |
+| 裝置名稱 | `PickupRobot` | `ESP32_MainController` |
+| App 相容 | Bluetooth Controller App 等 | BLE UART App（如 nRF Connect） |
+| 指令格式 | 單字元 | 單字元 + 字串指令 + 速度設定 |
+| ACK 回傳 | ❌ 無 | ✅ 有（子控板回傳確認） |
+| 斷線急停 | ❌ 無 | ✅ 有 |
+| 建議場景 | 簡易遙控 / 快速測試 | 進階控制 / 需要回饋的場景 |
 
 ## 快速開始
 
@@ -37,7 +51,7 @@
 
 ### 2. 填入 MAC 地址
 
-編輯 `MainController/MainController.ino`，將 3 組 MAC 地址填入：
+編輯 `MainController/MainController.ino`（或 `MainController_BLE/MainController_BLE.ino`），將 3 組 MAC 地址填入：
 
 ```cpp
 uint8_t Leg_Address[]     = {0x??, 0x??, 0x??, 0x??, 0x??, 0x??};  // C3 #1
@@ -50,13 +64,15 @@ uint8_t z_clap_Address[]  = {0x??, 0x??, 0x??, 0x??, 0x??, 0x??};  // C3 #3
 1. **先上傳子控板** — 讓它們進入等待接收狀態
    - `LegController.ino` → C3 #1
    - `noah_夾爪控制測試.ino` → C3 #2
-   - z/夾爪程式 → C3 #3（待開發）
-2. **再上傳主控板** — `MainController.ino` → ESP32
+   - `ZClawController.ino` → C3 #3
+2. **再上傳主控板** — `MainController.ino`（或 `MainController_BLE.ino`）→ ESP32
 
 ### 4. 測試
 
 - **Serial 測試**：在任一板子的 Serial Monitor 手動輸入指令測試
-- **藍芽測試**：手機搜尋 `PickupRobot`，連線後發送指令
+- **藍芽測試**：
+  - BluetoothSerial 版：手機搜尋 `PickupRobot`，連線後發送指令
+  - BLE 版：手機搜尋 `ESP32_MainController`，連線 UART Service 後發送指令
 
 ## 指令速查
 
@@ -85,17 +101,43 @@ uint8_t z_clap_Address[]  = {0x??, 0x??, 0x??, 0x??, 0x??, 0x??};  // C3 #3
 |------|------|
 | `u` | z 上升 |
 | `j` | z 下降 |
-| `o` | 夾爪張開 |
-| `p` | 夾爪閉合 |
-| `t` | 承物台傾斜 |
-| `y` | 承物台水平 |
-| `h` | 歸位 |
+| `o` | 夾爪張開 (→ 180°) |
+| `p` | 夾爪閉合 (→ 0°) |
+| `t` | 蓋板開 (→ 90°) |
+| `y` | 蓋板關 (→ 0°) |
+| `h` | 歸位（z 下降到底 + 夾爪張開 + 蓋板關） |
+
+### 子控板本機測試（Serial Monitor 額外指令）
+
+| 指令 | 功能 | 適用控制板 |
+|------|------|-----------|
+| `+` | 加速 | 全部 |
+| `-` | 減速 | 全部 |
+| `?` | 顯示狀態 | 全部 |
+| `1`~`9` | 夾爪角度 (20°~180°) | C3 #3 |
 
 ### 通用
 
 | 指令 | 功能 |
 |------|------|
 | `0` | 全部停止 |
+
+### BLE 版專用字串指令
+
+> 僅限 `MainController_BLE` 版本
+
+| 指令 | 功能 | 指令 | 功能 |
+|------|------|------|------|
+| `FORWARD` | 前進 | `BACKWARD` | 後退 |
+| `LEFT` | 左轉 | `RIGHT` | 右轉 |
+| `SPINL` / `QL` | 左旋 | `SPINR` / `ER` | 右旋 |
+| `EXTEND` | 手臂伸出 | `RETRACT` | 手臂縮回 |
+| `ARMLEFT` / `AL` | 手臂左轉 | `ARMRIGHT` / `AR` | 手臂右轉 |
+| `UP` / `ZU` | z 上升 | `DOWN` / `ZD` | z 下降 |
+| `OPEN` | 夾爪張開 | `CLOSE` | 夾爪閉合 |
+| `TILT` / `LO` | 蓋板開 | `FLAT` / `LC` | 蓋板關 |
+| `HOME` | 歸位 | `STOP` | 全部停止 |
+| `SPD:200` | 設定速度 | | |
 
 ## 編譯與上傳
 
@@ -113,7 +155,7 @@ uint8_t z_clap_Address[]  = {0x??, 0x??, 0x??, 0x??, 0x??, 0x??};  // C3 #3
 
 3. **安裝需要的函式庫**
    - 工具 → 管理函式庫 → 搜尋安裝 `ESP32Servo`（C3 #3 伺服控制用）
-   - `WiFi`、`esp_now`、`BluetoothSerial` 已內建，不需另外安裝
+   - `WiFi`、`esp_now`、`BluetoothSerial`、`BLE` 已內建，不需另外安裝
 
 4. **選擇開發板與 Port**
    - 主控板：工具 → 開發板 → `ESP32 Dev Module`
@@ -139,20 +181,32 @@ uint8_t z_clap_Address[]  = {0x??, 0x??, 0x??, 0x??, 0x??, 0x??};  // C3 #3
    arduino-cli core install esp32:esp32
    ```
 
-3. **查看連接的板子**
+3. **安裝需要的函式庫**
+   ```bash
+   arduino-cli lib install ESP32Servo
+   ```
+
+4. **查看連接的板子**
    ```bash
    arduino-cli board list
    ```
 
-4. **編譯與上傳**
+5. **編譯與上傳**
    ```bash
-   # ESP32 主控板
+   # ESP32 主控板（BluetoothSerial 版）
    arduino-cli compile --fqbn esp32:esp32:esp32 MainController/
    arduino-cli upload --fqbn esp32:esp32:esp32 -p /dev/cu.usbserial-XXXX MainController/
+
+   # ESP32 主控板（BLE 版）
+   arduino-cli compile --fqbn esp32:esp32:esp32 MainController_BLE/
+   arduino-cli upload --fqbn esp32:esp32:esp32 -p /dev/cu.usbserial-XXXX MainController_BLE/
 
    # ESP32-C3 子控板
    arduino-cli compile --fqbn esp32:esp32:esp32c3 LegController/
    arduino-cli upload --fqbn esp32:esp32:esp32c3 -p /dev/cu.usbmodem-XXXX LegController/
+
+   arduino-cli compile --fqbn esp32:esp32:esp32c3 ZClawController/
+   arduino-cli upload --fqbn esp32:esp32:esp32c3 -p /dev/cu.usbmodem-XXXX ZClawController/
    ```
 
 ### 共通注意事項
@@ -160,3 +214,29 @@ uint8_t z_clap_Address[]  = {0x??, 0x??, 0x??, 0x??, 0x??, 0x??};  // C3 #3
 - **FQBN 對照**：主控板 = `esp32:esp32:esp32`、子控板 = `esp32:esp32:esp32c3`
 - **Baud Rate**：全部使用 `115200`
 - **L298N ENA/ENB 跳線帽**：上傳程式前確認已拔除，否則 PWM 調速無效
+- **伺服馬達供電**：伺服馬達接 5V 穩壓電源（經 LM2596 降壓），不可從 C3 的 3.3V pin 取電
+- **ESP32Servo 函式庫**：`ZClawController` 需要安裝 `ESP32Servo` 函式庫
+- **共用協議**：`protocol.h` 定義了所有 ESP-NOW 通訊的 enum 和 struct，修改指令編號時需同步更新
+
+## 版本需求
+
+| 項目 | 版本要求 | 說明 |
+|------|---------|------|
+| arduino-esp32 | **v3.x** (推薦) | `MainController_BLE` 使用 v3.x 的 `OnDataSent` 新簽名 |
+| arduino-esp32 | v2.x (也可) | `MainController` (BluetoothSerial 版) 相容 v2.x |
+| ESP32Servo | 最新版 | `ZClawController` 伺服控制需要 |
+| Arduino IDE | 2.x | 推薦使用 Arduino IDE 2.x 以獲得更好的 ESP32 支援 |
+
+> ⚠ **注意**：如果 `MainController_BLE` 編譯報錯 `OnDataSent` 參數不匹配，
+> 表示你的 arduino-esp32 版本是 v2.x。請升級到 v3.x，或將 callback 簽名改為：
+> ```cpp
+> void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
+> ```
+
+## 已知限制與注意事項
+
+1. **MAC 地址佔位符**：`MainController` 和 `MainController_BLE` 中的 C3 #2、C3 #3 MAC 仍為 `0xFF` 佔位符，需替換為實際 MAC。啟動時會在 Serial Monitor 顯示警告。
+2. **ESP-NOW 通道**：BLE 版使用固定通道 1（`ESPNOW_CHANNEL = 1`），所有子控板需在同一通道。BluetoothSerial 版使用通道 0。
+3. **BLE + ESP-NOW 共存**：BLE 和 ESP-NOW 共用 Wi-Fi 硬體，在高頻率指令下可能有延遲。
+4. **速度設定**：BLE 版支援 `SPD:xxx` 指令動態調整速度（BluetoothSerial 版使用固定速度）。
+

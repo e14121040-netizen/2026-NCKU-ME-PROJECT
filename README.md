@@ -136,15 +136,22 @@ gantt
 ├── 開發步驟指南.md                         ← ⭐ 逐步開發流程指南
 ├── 2026機械專題實作.pdf                    ← 競賽規則
 │
+├── esp32控制/                               ← ⭐ ESP32 分散式控制程式
+│   ├── README.md                          ← 控制程式總覽與操作指南
+│   ├── protocol.h                         ← 共用通訊協議定義
+│   ├── MainController/                    ← ESP32 主控板（BluetoothSerial 版）
+│   ├── MainController_BLE/                ← ESP32 主控板（BLE 版）
+│   ├── LegController/                     ← C3 #1 腿部子控板
+│   ├── noah_夾爪控制測試/                  ← C3 #2 手臂 r/θ 子控板
+│   ├── ZClawController/                   ← C3 #3 z/夾爪子控板
+│   └── macaddress/                        ← MAC 地址查詢工具
+│
 ├── 取物機器人(八足Jansen)/                  ← 🤖 八足 Theo Jansen 子系統
 │   ├── README.md                          ← 子系統總覽
 │   ├── BOM.md                             ← 零件清單與預算
-│   ├── arduino/
-│   │   └── walking_robot.ino              ← ESP32 主程式（Arduino 框架）
 │   ├── app_inventor/
-│   │   ├── App指令對照表.md                ← 藍芽指令對照
+│   │   ├── App指令對照表.md                ← 遥控指令對照
 │   │   └── AppInventor開發指南.md          ← App 開發教學
-│   ├── 夾爪/                              ← 夾爪設計圖片
 │   ├── 電控/
 │   │   └── 接線圖.md                      ← 完整接線參考
 │   └── 機構設計/
@@ -154,38 +161,22 @@ gantt
 │   ├── README.md                          ← 子系統總覽
 │   ├── BOM.md                             ← 零件清單
 │   ├── ev3_program/
-│   │   └── transport_robot.py             ← EV3 MicroPython 主程式
-│   ├── ev3_program_test_sunchen0813/      ← EV3 測試程式
+│   │   └── transport_robot.py               ← EV3 MicroPython 主程式
 │   └── 機構設計/
 │       └── EV3組裝設計參考.md              ← 組裝要點
 │
 ├── 文件/                                   ← 📄 課程文件與報告
-│   ├── Engineering Design Process - 2026_notes.pdf
 │   ├── 故障排除指南.md                      ← 🔧 所有問題的集中排查手冊
 │   ├── 比賽當天Checklist.md                 ← ✅ 比賽日必備清單
 │   ├── 報告/                              ← 報告檔案
-│   │   ├── 專題計畫書格式2026.docx.pdf
-│   │   ├── 期中報告格式2026.docx.pdf
-│   │   ├── 期末報告格式2026.docx.pdf
-│   │   └── 專題計劃書.md                 ← ⭐ 計劃書 Markdown 版
 │   └── 海報/                              ← 海報檔案（待新增）
 │
 ├── 開會紀錄/                               ← 📝 每週開會紀錄
 │   ├── TEMPLATE.md                        ← 會議紀錄模板
 │   ├── 每週開會主題計畫.md                  ← 📅 14 週議程預排
-│   ├── 0224.md
-│   ├── 0303.md
-│   ├── 0310.md
-│   ├── 0317.md
-│   └── 0324.md
+│   └── 0224.md ~ 0421.md                   ← 各週會議紀錄
 │
 └── 歷屆學長資料(2021屆)/                   ← 📚 2021 屆學長參考資料
-    ├── README.md                          ← 學長資料總覽
-    ├── 底盤及吸氣馬達_MEGA.ino
-    ├── 底盤及吸氣馬達操作app.aia / .apk
-    ├── 手臂及伺服馬達_UNO.ino
-    ├── 手臂及伺服馬達操作app.aia / .apk
-    └── 機專收支Github用.xlsx
 ```
 
 ## 🔧 開發環境
@@ -200,10 +191,10 @@ gantt
 ## 📊 開發進度（與[開發步驟指南](開發步驟指南.md)同步）
 
 ### 階段 0：環境準備與採購
-- [ ] 軟體安裝（Arduino IDE 或 PlatformIO / ESP32 遙控 App / VS Code + EV3 / Python）
-- [ ] ESP32 開發環境設定（安裝 ESP32 Board 支援）
-- [ ] 零件採購（取物機器人 + 運輸機器人）
-- [ ] 學長 `.aia` 檔案已下載並可開啟
+- [x] 軟體安裝（Arduino IDE 或 PlatformIO / ESP32 遥控 App / VS Code + EV3 / Python）
+- [x] ESP32 開發環境設定（安裝 ESP32 Board 支援）
+- [x] 零件採購（取物機器人部分已採購）
+- [x] 學長 `.aia` 檔案已下載並可開啟
 
 ### 階段 1：取物機器人 — 底盤機構
 - [ ] Python 可視化確認連桿參數
@@ -214,13 +205,16 @@ gantt
 
 ### 階段 2：取物機器人 — 電控接線
 - [ ] L298N + 直流馬達接線完成
-- [ ] ESP32 ESP-NOW 通訊測試
-- [x] ESP32 主程式完成（馬達程式雛形）
-- [ ] PCA9685 + 伺服馬達接線測試
+- [x] ESP32 ESP-NOW 三路通訊架構建立
+- [x] ESP32 主控板程式完成（MainController + MainController_BLE 兩版本）
+- [x] ESP32-C3 #1 腿部子控板程式完成（LegController）
+- [x] ESP32-C3 #2 手臂 r/θ 子控板程式完成（noah_夾爪控制測試）
+- [x] ESP32-C3 #3 z/夾爪子控板程式完成（ZClawController）
+- [x] ESP32-C3 #3 GPIO PWM + 伺服馬達接線測試
 - [ ] LM2596 降壓模組接線測試
 
-### 階段 3：取物機器人 — 遙控 App
-- [ ] ESP32 藍芽遙控 App 完成
+### 階段 3：取物機器人 — 遥控 App
+- [ ] ESP32 藍芽遥控 App 完成
 - [ ] 步行按鈕（按住/放開）測試通過
 - [ ] 手臂按鈕測試通過
 - [ ] App 安裝到手機

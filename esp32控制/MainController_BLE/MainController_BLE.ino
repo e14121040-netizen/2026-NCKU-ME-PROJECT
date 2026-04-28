@@ -1,11 +1,7 @@
 /*
  * =====================================================
  *  2026 NCKU 機械專題實作 — 取物機器人 主控板
-<<<<<<< HEAD
  *  ESP32 MainController (BLE 版)
-=======
- *  ESP32 MainController (BluetoothSerial 版)
->>>>>>> e3636b7227f72b5c4bdd4200349cfb88feb6067d
  * =====================================================
  *
  *  功能：
@@ -39,23 +35,14 @@
  *    z/夾爪: u/j/o/p/t/y/h
  *    停止: 0
  *
-<<<<<<< HEAD
  *  BLE UART Service UUID:
  *    Service:  6E400001-B5A3-F393-E0A9-E50E24DCCA9E
  *    RX Char:  6E400002-B5A3-F393-E0A9-E50E24DCCA9E
  *    TX Char:  6E400003-B5A3-F393-E0A9-E50E24DCCA9E
-=======
- *  z/夾爪指令 → 轉發至 C3 #3：
- *    'u' = z 上升    'j' = z 下降
- *    'o' = 爪張開    'p' = 爪閉合
- *    't' = 蓋板開    'y' = 蓋板關
- *    'h' = 歸位
->>>>>>> e3636b7227f72b5c4bdd4200349cfb88feb6067d
  */
 
 #include <esp_now.h>
 #include <WiFi.h>
-<<<<<<< HEAD
 #include <esp_wifi.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
@@ -63,11 +50,6 @@
 #include <BLE2902.h>
 
 const uint8_t ESPNOW_CHANNEL = 1;
-=======
-#include <BluetoothSerial.h>
-
-BluetoothSerial SerialBT;
->>>>>>> e3636b7227f72b5c4bdd4200349cfb88feb6067d
 
 // =====================================================
 //  子控板 MAC 地址
@@ -80,7 +62,6 @@ uint8_t r_theta_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #2 手�
 uint8_t z_clap_Address[]  = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #3 z/夾爪    ⚠ TODO
 
 // =====================================================
-<<<<<<< HEAD
 //  BLE UART Service UUID
 // =====================================================
 static const char *BLE_DEVICE_NAME = "ESP32_MainController";
@@ -89,8 +70,6 @@ static const char *CHARACTERISTIC_UUID_RX = "6E400002-B5A3-F393-E0A9-E50E24DCCA9
 static const char *CHARACTERISTIC_UUID_TX = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";
 
 // =====================================================
-=======
->>>>>>> e3636b7227f72b5c4bdd4200349cfb88feb6067d
 //  ESP-NOW 資料格式 — 通用指令結構
 // =====================================================
 // 腿部指令
@@ -109,15 +88,12 @@ typedef struct leg_now_message {
   uint8_t speed;
 } leg_now_message;
 
-<<<<<<< HEAD
 typedef struct leg_ack_message {
   uint8_t command;
   uint8_t speed;
   uint8_t status;
 } leg_ack_message;
 
-=======
->>>>>>> e3636b7227f72b5c4bdd4200349cfb88feb6067d
 // 手臂 r/θ 指令
 enum GripperCommand {
   CMD_GRIPPER_STOP = 0,
@@ -154,27 +130,7 @@ typedef struct zclaw_now_message {
 // =====================================================
 const uint8_t FULL_SPEED = 200;
 const uint8_t HALF_SPEED = 120;
-<<<<<<< HEAD
 uint8_t currentSpeed = FULL_SPEED;  // BLE SPD 指令可動態調整
-
-bool isValidPeerAddress(const uint8_t *addr) {
-  if (addr == nullptr) {
-    return false;
-  }
-
-  bool allZero = true;
-  bool allFF = true;
-  for (int i = 0; i < 6; ++i) {
-    if (addr[i] != 0x00) {
-      allZero = false;
-    }
-    if (addr[i] != 0xFF) {
-      allFF = false;
-    }
-  }
-
-  return !allZero && !allFF;
-}
 
 // =====================================================
 //  BLE 相關變數
@@ -256,9 +212,7 @@ void queueZClawCommand(uint8_t cmd, uint8_t spd) {
 void sendPendingCommands() {
   if (legDirty) {
     leg_now_message msg = {legCommand, legSpeed};
-    esp_err_t result = isValidPeerAddress(Leg_Address)
-                         ? esp_now_send(Leg_Address, (uint8_t *)&msg, sizeof(msg))
-                         : ESP_ERR_ESPNOW_ARG;
+    esp_err_t result = esp_now_send(Leg_Address, (uint8_t *)&msg, sizeof(msg));
     if (result == ESP_OK) {
       notifyBle("-> Leg CMD:" + String(legCommand) + " SPD:" + String(legSpeed));
     } else {
@@ -269,9 +223,7 @@ void sendPendingCommands() {
 
   if (gripperDirty) {
     gripper_now_message msg = {gripperCommand, gripperSpeed};
-    esp_err_t result = isValidPeerAddress(r_theta_Address)
-                         ? esp_now_send(r_theta_Address, (uint8_t *)&msg, sizeof(msg))
-                         : ESP_ERR_ESPNOW_ARG;
+    esp_err_t result = esp_now_send(r_theta_Address, (uint8_t *)&msg, sizeof(msg));
     if (result == ESP_OK) {
       notifyBle("-> Gripper CMD:" + String(gripperCommand) + " SPD:" + String(gripperSpeed));
     } else {
@@ -282,9 +234,7 @@ void sendPendingCommands() {
 
   if (zclawDirty) {
     zclaw_now_message msg = {zclawCommand, zclawSpeed};
-    esp_err_t result = isValidPeerAddress(z_clap_Address)
-                         ? esp_now_send(z_clap_Address, (uint8_t *)&msg, sizeof(msg))
-                         : ESP_ERR_ESPNOW_ARG;
+    esp_err_t result = esp_now_send(z_clap_Address, (uint8_t *)&msg, sizeof(msg));
     if (result == ESP_OK) {
       notifyBle("-> ZClaw CMD:" + String(zclawCommand) + " SPD:" + String(zclawSpeed));
     } else {
@@ -306,27 +256,12 @@ void OnDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
     Serial.print("ESP-NOW -> R_Theta: ");
   } else if (destination != nullptr && memcmp(destination, z_clap_Address, 6) == 0) {
     Serial.print("ESP-NOW -> Z_Claw: ");
-=======
-
-// =====================================================
-//  ESP-NOW 回調：傳送結果
-// =====================================================
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  Serial.print("ESP-NOW Send -> ");
-  if (memcmp(mac_addr, Leg_Address, 6) == 0) {
-    Serial.print("Leg");
-  } else if (memcmp(mac_addr, r_theta_Address, 6) == 0) {
-    Serial.print("R_Theta");
-  } else if (memcmp(mac_addr, z_clap_Address, 6) == 0) {
-    Serial.print("Z_Claw");
->>>>>>> e3636b7227f72b5c4bdd4200349cfb88feb6067d
   } else {
     Serial.print("ESP-NOW -> Unknown: ");
   }
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "OK" : "FAIL");
 }
 
-<<<<<<< HEAD
 void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
   if (incomingData == nullptr || len < 2) {
     Serial.print("Unexpected ESP-NOW response, len=");
@@ -355,12 +290,12 @@ void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, in
 void processSingleChar(char c) {
   switch (c) {
     // ===== 腿部指令 → C3 #1 =====
-    case 'f': queueLegCommand(CMD_FORWARD, currentSpeed); notifyBle("CMD: Forward"); break;
-    case 'b': queueLegCommand(CMD_BACKWARD, currentSpeed); notifyBle("CMD: Backward"); break;
-    case 'l': queueLegCommand(CMD_LEFT, currentSpeed); notifyBle("CMD: Left"); break;
-    case 'r': queueLegCommand(CMD_RIGHT, currentSpeed); notifyBle("CMD: Right"); break;
-    case 'q': queueLegCommand(CMD_SPIN_LEFT, currentSpeed); notifyBle("CMD: SpinLeft"); break;
-    case 'e': queueLegCommand(CMD_SPIN_RIGHT, currentSpeed); notifyBle("CMD: SpinRight"); break;
+    case 'f': queueLegCommand(CMD_FORWARD, FULL_SPEED); notifyBle("CMD: Forward"); break;
+    case 'b': queueLegCommand(CMD_BACKWARD, FULL_SPEED); notifyBle("CMD: Backward"); break;
+    case 'l': queueLegCommand(CMD_LEFT, FULL_SPEED); notifyBle("CMD: Left"); break;
+    case 'r': queueLegCommand(CMD_RIGHT, FULL_SPEED); notifyBle("CMD: Right"); break;
+    case 'q': queueLegCommand(CMD_SPIN_LEFT, FULL_SPEED); notifyBle("CMD: SpinLeft"); break;
+    case 'e': queueLegCommand(CMD_SPIN_RIGHT, FULL_SPEED); notifyBle("CMD: SpinRight"); break;
     case 'F': queueLegCommand(CMD_FORWARD, HALF_SPEED); notifyBle("CMD: Forward(half)"); break;
     case 'B': queueLegCommand(CMD_BACKWARD, HALF_SPEED); notifyBle("CMD: Backward(half)"); break;
     case 'L': queueLegCommand(CMD_LEFT, HALF_SPEED); notifyBle("CMD: Left(half)"); break;
@@ -419,22 +354,22 @@ void handleBleCommand(String commandText) {
 
   // ----- 腿部字串指令 -----
   if (upperCmd == "FORWARD") {
-    queueLegCommand(CMD_FORWARD, currentSpeed);
+    queueLegCommand(CMD_FORWARD, FULL_SPEED);
     notifyBle("CMD: FORWARD");
   } else if (upperCmd == "BACKWARD") {
-    queueLegCommand(CMD_BACKWARD, currentSpeed);
+    queueLegCommand(CMD_BACKWARD, FULL_SPEED);
     notifyBle("CMD: BACKWARD");
   } else if (upperCmd == "LEFT") {
-    queueLegCommand(CMD_LEFT, currentSpeed);
+    queueLegCommand(CMD_LEFT, FULL_SPEED);
     notifyBle("CMD: LEFT");
   } else if (upperCmd == "RIGHT") {
-    queueLegCommand(CMD_RIGHT, currentSpeed);
+    queueLegCommand(CMD_RIGHT, FULL_SPEED);
     notifyBle("CMD: RIGHT");
   } else if (upperCmd == "QL" || upperCmd == "SPINL") {
-    queueLegCommand(CMD_SPIN_LEFT, currentSpeed);
+    queueLegCommand(CMD_SPIN_LEFT, FULL_SPEED);
     notifyBle("CMD: SPIN LEFT");
   } else if (upperCmd == "ER" || upperCmd == "SPINR") {
-    queueLegCommand(CMD_SPIN_RIGHT, currentSpeed);
+    queueLegCommand(CMD_SPIN_RIGHT, FULL_SPEED);
     notifyBle("CMD: SPIN RIGHT");
   }
   // ----- 手臂字串指令 -----
@@ -529,55 +464,10 @@ class ControllerRxCallbacks : public BLECharacteristicCallbacks {
 //  ESP-NOW 初始化
 // =====================================================
 bool addPeer(uint8_t *addr, const char *name) {
-  if (!isValidPeerAddress(addr)) {
-    Serial.print("Skip invalid peer: ");
-    Serial.println(name);
-    return false;
-  }
-
   esp_now_peer_info_t peerInfo = {};
   memcpy(peerInfo.peer_addr, addr, 6);
   peerInfo.channel = ESPNOW_CHANNEL;
   peerInfo.ifidx = WIFI_IF_STA;
-=======
-// =====================================================
-//  指令發送函式
-// =====================================================
-void sendLegCommand(uint8_t cmd, uint8_t spd) {
-  leg_now_message msg;
-  msg.command = cmd;
-  msg.speed = spd;
-  esp_now_send(Leg_Address, (uint8_t *)&msg, sizeof(msg));
-  Serial.print("-> Leg CMD: "); Serial.print(cmd);
-  Serial.print(", SPD: "); Serial.println(spd);
-}
-
-void sendGripperCommand(uint8_t cmd, uint8_t spd) {
-  gripper_now_message msg;
-  msg.command = cmd;
-  msg.speed = spd;
-  esp_now_send(r_theta_Address, (uint8_t *)&msg, sizeof(msg));
-  Serial.print("-> Gripper CMD: "); Serial.print(cmd);
-  Serial.print(", SPD: "); Serial.println(spd);
-}
-
-void sendZClawCommand(uint8_t cmd, uint8_t spd) {
-  zclaw_now_message msg;
-  msg.command = cmd;
-  msg.speed = spd;
-  esp_now_send(z_clap_Address, (uint8_t *)&msg, sizeof(msg));
-  Serial.print("-> ZClaw CMD: "); Serial.print(cmd);
-  Serial.print(", SPD: "); Serial.println(spd);
-}
-
-// =====================================================
-//  ESP-NOW Peer 註冊
-// =====================================================
-bool addPeer(uint8_t *addr, const char *name) {
-  esp_now_peer_info_t peerInfo = {};
-  memcpy(peerInfo.peer_addr, addr, 6);
-  peerInfo.channel = 0;
->>>>>>> e3636b7227f72b5c4bdd4200349cfb88feb6067d
   peerInfo.encrypt = false;
 
   if (esp_now_add_peer(&peerInfo) != ESP_OK) {
@@ -590,7 +480,6 @@ bool addPeer(uint8_t *addr, const char *name) {
   return true;
 }
 
-<<<<<<< HEAD
 void setupEspNow() {
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
@@ -649,54 +538,6 @@ void setupBle() {
 
   Serial.println("BLE ready");
   Serial.println("Device name: " + String(BLE_DEVICE_NAME));
-=======
-// =====================================================
-//  處理藍芽收到的指令
-// =====================================================
-void processCommand(char c) {
-  switch (c) {
-    // ===== 腿部指令 → C3 #1 =====
-    case 'f': sendLegCommand(CMD_FORWARD, FULL_SPEED); break;
-    case 'b': sendLegCommand(CMD_BACKWARD, FULL_SPEED); break;
-    case 'l': sendLegCommand(CMD_LEFT, FULL_SPEED); break;
-    case 'r': sendLegCommand(CMD_RIGHT, FULL_SPEED); break;
-    case 'q': sendLegCommand(CMD_SPIN_LEFT, FULL_SPEED); break;
-    case 'e': sendLegCommand(CMD_SPIN_RIGHT, FULL_SPEED); break;
-    case 'F': sendLegCommand(CMD_FORWARD, HALF_SPEED); break;
-    case 'B': sendLegCommand(CMD_BACKWARD, HALF_SPEED); break;
-    case 'L': sendLegCommand(CMD_LEFT, HALF_SPEED); break;
-    case 'R': sendLegCommand(CMD_RIGHT, HALF_SPEED); break;
-
-    // ===== 手臂 r/θ → C3 #2 =====
-    case 'w': sendGripperCommand(CMD_ARM_EXTEND, FULL_SPEED); break;
-    case 's': sendGripperCommand(CMD_ARM_RETRACT, FULL_SPEED); break;
-    case 'a': sendGripperCommand(CMD_ARM_LEFT, FULL_SPEED); break;
-    case 'd': sendGripperCommand(CMD_ARM_RIGHT, FULL_SPEED); break;
-
-    // ===== z/夾爪 → C3 #3 =====
-    case 'u': sendZClawCommand(CMD_Z_UP, FULL_SPEED); break;
-    case 'j': sendZClawCommand(CMD_Z_DOWN, FULL_SPEED); break;
-    case 'o': sendZClawCommand(CMD_CLAW_OPEN, 0); break;
-    case 'p': sendZClawCommand(CMD_CLAW_CLOSE, 0); break;
-    case 't': sendZClawCommand(CMD_LID_OPEN, 0); break;
-    case 'y': sendZClawCommand(CMD_LID_CLOSE, 0); break;
-    case 'h': sendZClawCommand(CMD_HOME, 0); break;
-
-    // ===== 全部停止 =====
-    case '0':
-      sendLegCommand(CMD_LEG_STOP, 0);
-      sendGripperCommand(CMD_GRIPPER_STOP, 0);
-      sendZClawCommand(CMD_ZCLAW_STOP, 0);
-      break;
-
-    default:
-      if (c != '\n' && c != '\r') {
-        Serial.print("Unknown cmd: ");
-        Serial.println(c);
-      }
-      break;
-  }
->>>>>>> e3636b7227f72b5c4bdd4200349cfb88feb6067d
 }
 
 // =====================================================
@@ -704,11 +545,7 @@ void processCommand(char c) {
 // =====================================================
 void setup() {
   Serial.begin(115200);
-<<<<<<< HEAD
   delay(300);
-
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
 
   Serial.println("========================================");
   Serial.println("  ESP32 MainController — BLE Version");
@@ -736,67 +573,13 @@ void setup() {
   queueZClawCommand(CMD_ZCLAW_STOP, 0);
 
   Serial.println();
-=======
-  delay(500);
-
-  Serial.println("========================================");
-  Serial.println("  ESP32 MainController — Command Hub");
-  Serial.println("  BT Recv + ESP-NOW Dispatch (3 peers)");
-  Serial.println("========================================");
-
-  // ----- Wi-Fi STA mode for ESP-NOW -----
-  WiFi.mode(WIFI_STA);
-  Serial.print("MAC Address: ");
-  Serial.println(WiFi.macAddress());
-
-  // ----- 藍芽初始化 -----
-  SerialBT.begin("PickupRobot");  // 藍芽裝置名稱
-  Serial.println("Bluetooth started: PickupRobot");
-
-  // ----- ESP-NOW 初始化 -----
-  if (esp_now_init() != ESP_OK) {
-    Serial.println("!! ESP-NOW Init FAILED");
-    return;
-  }
-  esp_now_register_send_cb(OnDataSent);
-
-  // ----- 註冊 3 個子控板 Peer -----
-  addPeer(Leg_Address, "C3#1 Leg");
-  addPeer(r_theta_Address, "C3#2 R_Theta");
-  addPeer(z_clap_Address, "C3#3 Z_Claw");
-
-  Serial.println();
-
-  // ----- 檢查 MAC 佔位符警告 -----
-  bool hasPlaceholder = true;
-  for (int i = 0; i < 6; i++) {
-    if (r_theta_Address[i] != 0xFF || z_clap_Address[i] != 0xFF) {
-      hasPlaceholder = false;
-      break;
-    }
-  }
-  if (hasPlaceholder) {
-    Serial.println("!! WARNING: C3 #2 and/or C3 #3 MAC still 0xFF!!");
-    Serial.println("!! Upload macaddress.ino to get real MAC addresses.");
-    Serial.println();
-  }
-
-  Serial.println("ESP-NOW Initialized. Waiting for BT commands...");
-  Serial.println("Use Serial Monitor or Bluetooth App to send commands.");
-  Serial.println();
-
-  // ----- 指令速查 -----
->>>>>>> e3636b7227f72b5c4bdd4200349cfb88feb6067d
   Serial.println("--- Command Reference ---");
   Serial.println("  Leg:     f/b/l/r/q/e (full)  F/B/L/R (half)");
   Serial.println("  Arm:     w=extend s=retract a=left d=right");
   Serial.println("  Z/Claw:  u=up j=down o=open p=close");
   Serial.println("           t=lid_open y=lid_close h=home");
   Serial.println("  All:     0=STOP ALL");
-<<<<<<< HEAD
   Serial.println("  BLE:     FORWARD, BACKWARD, LEFT, RIGHT, STOP, SPD:200");
-=======
->>>>>>> e3636b7227f72b5c4bdd4200349cfb88feb6067d
   Serial.println("-------------------------");
 }
 
@@ -804,7 +587,6 @@ void setup() {
 //  Main Loop
 // =====================================================
 void loop() {
-<<<<<<< HEAD
   // ----- BLE 連線狀態追蹤 -----
   if (!bleClientConnected && lastBleClientConnected) {
     notifyBle("BLE controller disconnected");
@@ -815,14 +597,6 @@ void loop() {
   }
 
   lastBleClientConnected = bleClientConnected;
-=======
-  // ----- 處理藍芽接收 -----
-  if (SerialBT.available()) {
-    char c = SerialBT.read();
-    Serial.print("[BT] ");
-    processCommand(c);
-  }
->>>>>>> e3636b7227f72b5c4bdd4200349cfb88feb6067d
 
   // ----- Serial 手動測試（debug 用）-----
   if (Serial.available()) {
@@ -831,12 +605,8 @@ void loop() {
     processSingleChar(c);
   }
 
-<<<<<<< HEAD
   // ----- 發送待處理指令 -----
   sendPendingCommands();
 
   delay(20);
-=======
-  delay(10);
->>>>>>> e3636b7227f72b5c4bdd4200349cfb88feb6067d
 }
