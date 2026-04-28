@@ -49,6 +49,9 @@
 
 #include <esp_now.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
+
+const uint8_t ESPNOW_CHANNEL = 1;
 
 // =====================================================
 //  ESP-NOW 資料格式（與主控板 MainController 一致）
@@ -68,8 +71,17 @@ typedef struct gripper_now_message {
   uint8_t speed;
 } gripper_now_message;
 
+typedef struct ack_message {
+  uint8_t command;
+  uint8_t speed;
+  uint8_t status;
+} ack_message;
+
 gripper_now_message incomingMsg;
 bool newDataReceived = false;
+bool espNowReady = false;
+uint8_t lastSenderMac[6] = {0};
+bool senderKnown = false;
 
 // =====================================================
 //  L298N 腳位定義 — ESP32-C3 Super Mini
@@ -123,17 +135,118 @@ bool motorT_running = false;
 // =====================================================
 //  ESP-NOW 回調：接收到資料時觸發
 // =====================================================
-void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
-  if (len == sizeof(gripper_now_message)) {
-    memcpy(&incomingMsg, data, sizeof(gripper_now_message));
-    newDataReceived = true;
-
-    // Debug 輸出
-    Serial.print("ESP-NOW Recv -> CMD: ");
-    Serial.print(incomingMsg.command);
-    Serial.print(", Speed: ");
-    Serial.println(incomingMsg.speed);
+void printMacAddress(const uint8_t *mac) {
+  if (mac == nullptr) {
+    Serial.print("null");
+    return;
   }
+
+  for (int i = 0; i < 6; ++i) {
+    if (mac[i] < 16) {
+      Serial.print('0');
+    }
+    Serial.print(mac[i], HEX);
+    if (i < 5) {
+      Serial.print(':');
+    }
+  }
+}
+
+bool ensurePeerExists(const uint8_t *peerMac) {
+  if (peerMac == nullptr) {
+    return false;
+  }
+
+  if (esp_now_is_peer_exist(peerMac)) {
+    return true;
+  }
+
+  esp_now_peer_info_t peerInfo = {};
+  memcpy(peerInfo.peer_addr, peerMac, 6);
+  peerInfo.channel = ESPNOW_CHANNEL;
+  peerInfo.ifidx = WIFI_IF_STA;
+  peerInfo.encrypt = false;
+
+  esp_err_t addResult = esp_now_add_peer(&peerInfo);
+  if (addResult != ESP_OK) {
+    Serial.print("Failed to add sender peer, err=");
+    Serial.println(addResult);
+    return false;
+  }
+
+  Serial.print("Registered sender peer: ");
+  printMacAddress(peerMac);
+  Serial.println();
+  return true;
+}
+
+void sendAck() {
+  if (!senderKnown) {
+    return;
+  }
+
+  if (!ensurePeerExists(lastSenderMac)) {
+    return;
+  }
+
+  ack_message ack = {
+    incomingMsg.command,
+    incomingMsg.speed,
+    1
+  };
+
+  esp_err_t result = esp_now_send(lastSenderMac, (uint8_t *)&ack, sizeof(ack));
+  if (result != ESP_OK) {
+    Serial.print("ACK send failed, err=");
+    Serial.println(result);
+  }
+}
+
+void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
+  if (data == nullptr || len != sizeof(gripper_now_message)) {
+    Serial.print("Invalid ESP-NOW packet, len=");
+    Serial.println(len);
+    return;
+  }
+
+  memcpy(&incomingMsg, data, sizeof(gripper_now_message));
+
+  if (info != nullptr && info->src_addr != nullptr) {
+    memcpy(lastSenderMac, info->src_addr, 6);
+    senderKnown = true;
+  }
+
+  newDataReceived = true;
+
+  Serial.print("Received command=");
+  Serial.print(incomingMsg.command);
+  Serial.print(", speed=");
+  Serial.print(incomingMsg.speed);
+  Serial.print(", from=");
+  printMacAddress(lastSenderMac);
+  Serial.println();
+
+  sendAck();
+}
+
+void setupEspNow() {
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+
+  esp_err_t channelResult = esp_wifi_set_channel(ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  if (channelResult != ESP_OK) {
+    Serial.print("Failed to set WiFi channel, err=");
+    Serial.println(channelResult);
+  }
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("!! ESP-NOW Init FAILED");
+    return;
+  }
+
+  esp_now_register_recv_cb(OnDataRecv);
+  espNowReady = true;
+  Serial.println("ESP-NOW receiver ready");
 }
 
 // =====================================================
@@ -358,17 +471,9 @@ void setup() {
   allStop();
 
   // ----- ESP-NOW 初始化 -----
-  WiFi.mode(WIFI_STA);
-  Serial.print("MAC Address: ");
+  Serial.print("Receiver MAC: ");
   Serial.println(WiFi.macAddress());
-
-  if (esp_now_init() != ESP_OK) {
-    Serial.println("!! ESP-NOW Init FAILED");
-    // 繼續執行，仍可透過 Serial 測試
-  } else {
-    esp_now_register_recv_cb(OnDataRecv);
-    Serial.println("ESP-NOW Initialized, waiting for data...");
-  }
+  setupEspNow();
 
   // ----- 印出使用說明 -----
   Serial.println();

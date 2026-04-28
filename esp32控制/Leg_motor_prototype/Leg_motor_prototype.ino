@@ -4,12 +4,14 @@
 
 const uint8_t ESPNOW_CHANNEL = 1;
 
-const int freq=30000;
-const int pwmChannel=0;
+const int freq=2000;
 const int resolution=8;//8 bit PWM=0~255
-const int leftmotor=0;
-const int rightmotor=1;
+const int leftMotorChannel=0;
+const int rightMotorChannel=1;
 int dutyCycle=200;//speedvalue
+const int minRunningPwm=90;
+const int startBoostPwm=140;
+const unsigned long startBoostMs=120;
 
 
 
@@ -17,16 +19,16 @@ int dutyCycle=200;//speedvalue
 // 左馬達 (L298N Motor A)
 // =========================
 // ESP32-C3 常用可輸出 GPIO，避開不存在或容易衝突的腳位
-const int Left_Pin1=3;
-const int Left_Pin2=4;
-const int Left_enable=5;
+const int Left_Pin1=0;
+const int Left_Pin2=1;
+const int Left_enable=2;
 
 // =========================
 // 右馬達 (L298N Motor B)
 // =========================
-const int Right_Pin1=6;
-const int Right_Pin2=7;
-const int Right_enable=10;
+const int Right_Pin1=3;
+const int Right_Pin2=4;
+const int Right_enable=5;
 
 // =========================
 // 指令列舉
@@ -36,7 +38,8 @@ enum CommandType{
   CMD_FORWARD,
   CMD_BACKWARD,
   CMD_LEFT,
-  CMD_RIGHT};
+  CMD_RIGHT,
+  };
 
 //ESP-NOW 傳輸資料格式
 typedef struct now_message{
@@ -50,11 +53,13 @@ typedef struct ack_message{
   uint8_t status;
 }ack_message;
 
-volatile uint8_t currentCommand=CMD_STOP;
-volatile uint8_t currentSpeed=200;
+volatile uint8_t currentCommand=CMD_STOP;//預設停止
+volatile uint8_t currentSpeed=200;//pwm值，0~255，預設200 占空比80%
 bool espNowReady=false;
 uint8_t lastSenderMac[6]={0};
 bool senderKnown=false;
+int lastLeftSpeed=0;
+int lastRightSpeed=0;
 
 void printMacAddress(const uint8_t *mac){
   if (mac == nullptr) {
@@ -73,6 +78,7 @@ void printMacAddress(const uint8_t *mac){
   }
 }
 
+//======確保對方已經註冊為 ESP-NOW peer，如果沒有就註冊======
 bool ensurePeerExists(const uint8_t *peerMac){
   if (peerMac == nullptr) {
     return false;
@@ -130,8 +136,30 @@ void sendAck(){
 
 //------馬達速度控制------
 void SetMotorSpeed(int left_speed, int right_speed){
-  ledcWrite(leftmotor,left_speed);
-  ledcWrite(rightmotor,right_speed);
+  left_speed = constrain(left_speed, 0, 255);
+  right_speed = constrain(right_speed, 0, 255);
+
+  if (left_speed > 0 && left_speed < minRunningPwm) {
+    left_speed = minRunningPwm;
+  }
+  if (right_speed > 0 && right_speed < minRunningPwm) {
+    right_speed = minRunningPwm;
+  }
+
+  // Give the motor a short kick when starting from standstill.
+  if (left_speed > 0 && lastLeftSpeed == 0) {
+    ledcWrite(Left_enable, max(left_speed, startBoostPwm));
+    delay(startBoostMs);
+  }
+  if (right_speed > 0 && lastRightSpeed == 0) {
+    ledcWrite(Right_enable, max(right_speed, startBoostPwm));
+    delay(startBoostMs);
+  }
+
+  ledcWrite(Left_enable, left_speed);
+  ledcWrite(Right_enable, right_speed);
+  lastLeftSpeed = left_speed;
+  lastRightSpeed = right_speed;
 }
 
 //------停止------
@@ -265,15 +293,15 @@ void setup() {
     Left_enable / Right_enable -> PWM輸出腳位
     freq -> PWM頻率
     resolution -> PWM解析度
-    pwmChannel -> 通道*/
-  ledcAttachChannel(Left_enable, freq, resolution, leftmotor);//esp32 pwm control
-  ledcAttachChannel(Right_enable, freq, resolution, rightmotor);//esp32 pwm control
+    leftMotorChannel / rightMotorChannel -> PWM通道*/
+  ledcAttachChannel(Left_enable, freq, resolution, leftMotorChannel);//esp32 pwm control
+  ledcAttachChannel(Right_enable, freq, resolution, rightMotorChannel);//esp32 pwm control
 
   StopMotor();
   Serial.println("Testing DC Motor...");
-  Serial.print("Receiver MAC: ");
-  Serial.println(WiFi.macAddress());
   setupEspNow();
+  Serial.print("Receiver MAC (STA): ");
+  Serial.println(WiFi.macAddress());
 }
 
 
