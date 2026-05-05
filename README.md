@@ -53,11 +53,11 @@
 - **目標**：一次處理兩筆訂單
 
 ### 電控系統（分散式架構）
-- **主控**：ESP32（主控板）— 負責藍芽遙控接收 + ESP-NOW 指令分發
-- **子控**：ESP32-C3 ×3（腿部 / 手臂 r·θ / z·夾爪子控板）
-- **通訊**：ESP-NOW（點對點無線通訊）+ ESP32 內建藍芽 ← 手機遙控 App
-- **馬達驅動**：L298N ×3（分別由各子控板驅動：步行/手臂/z 升降）+ 伺服馬達（夾爪開合、承物台，由 C3 #3 GPIO PWM 直接驅動）
-- **供電**：18650 鋰電池 × 4 + LM2596 降壓模組（5V 輸出）
+- **主控**：ESP32（主控板）— 負責藍芽遥控接收 + ESP-NOW 指令分發，USB 插電腦供電
+- **子控**：ESP32-C3 ×3（#1 腳部 / #2 大圓盤+z / #3 Servo 子控板）
+- **通訊**：ESP-NOW（點對點無線通訊）+ ESP32 內建藍芽 ← 手機遥控 App
+- **馬達驅動**：L298N ×2（#1 步行馬達×2、#2 大圓盤+z升降）+ MG996R Servo ×3（r 齒條、θ 旋轉、夾爪開合，由 C3 #3 GPIO PWM 直接驅動）
+- **供電**：18650 鋰電池 × 4（可擴充至 2~3 組）+ XL4015 降壓模組 5A（Servo 專用 5V）+ LM2596 降壓模組 3A（MCU 專用 5V）
 
 ## 🚚 運輸機器人
 
@@ -139,12 +139,12 @@ gantt
 ├── esp32控制/                               ← ⭐ ESP32 分散式控制程式
 │   ├── README.md                          ← 控制程式總覽與操作指南
 │   ├── protocol.h                         ← 共用通訊協議定義
-│   ├── MainController/                    ← ESP32 主控板（BluetoothSerial 版）
-│   ├── MainController_BLE/                ← ESP32 主控板（BLE 版）
-│   ├── LegController/                     ← C3 #1 腿部子控板
-│   ├── noah_夾爪控制測試/                  ← C3 #2 手臂 r/θ 子控板
-│   ├── ZClawController/                   ← C3 #3 z/夾爪子控板
-│   └── macaddress/                        ← MAC 地址查詢工具
+│   ├── 00_macaddress/                     ← MAC 地址查詢工具
+│   ├── 01_MainController/                 ← ESP32 主控板（BLE 版）
+│   ├── 02_LegController/                  ← C3 #1 腳部子控板
+│   ├── 03_TurntableZController/            ← C3 #2 大圓盤+z 子控板
+│   ├── 04_ServoClawController/             ← C3 #3 Servo 子控板
+│   └── _test/                          ← 測試用程式
 │
 ├── 取物機器人(八足Jansen)/                  ← 🤖 八足 Theo Jansen 子系統
 │   ├── README.md                          ← 子系統總覽
@@ -204,14 +204,13 @@ gantt
 - [ ] 組裝八足底盤 + 手搖測試
 
 ### 階段 2：取物機器人 — 電控接線
-- [ ] L298N + 直流馬達接線完成
+- [ ] L298N ×2 + DC 馬達接線完成
 - [x] ESP32 ESP-NOW 三路通訊架構建立
-- [x] ESP32 主控板程式完成（MainController + MainController_BLE 兩版本）
-- [x] ESP32-C3 #1 腿部子控板程式完成（LegController）
-- [x] ESP32-C3 #2 手臂 r/θ 子控板程式完成（noah_夾爪控制測試）
-- [x] ESP32-C3 #3 z/夾爪子控板程式完成（ZClawController）
-- [x] ESP32-C3 #3 GPIO PWM + 伺服馬達接線測試
-- [ ] LM2596 降壓模組接線測試
+- [x] ESP32 主控板程式完成（01_MainController BLE 版）
+- [x] ESP32-C3 #1 腳部子控板程式完成（02_LegController）
+- [x] ESP32-C3 #2 大圓盤+z 子控板程式完成（03_TurntableZController）
+- [x] ESP32-C3 #3 Servo 子控板程式完成（04_ServoClawController）
+- [ ] XL4015 + LM2596 雙降壓模組接線測試
 
 ### 階段 3：取物機器人 — 遥控 App
 - [ ] ESP32 藍芽遥控 App 完成

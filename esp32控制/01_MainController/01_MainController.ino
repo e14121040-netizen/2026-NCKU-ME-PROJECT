@@ -11,15 +11,15 @@
  *  - 支援 ACK 回傳（從子控板接收確認）
  *  - 不直接驅動任何馬達
  *
- *  分散式架構：
- *  ┌─────────────────────────────────────────────┐
- *  │  ESP32 主控板 (BLE)                          │
- *  │  ├── BLE UART Service 接收                  │
- *  │  └── ESP-NOW 分發至：                        │
- *  │       ├── C3 #1 (腿部)  → 步行馬達 ×2       │
- *  │       ├── C3 #2 (手臂)  → r/θ 馬達 ×2       │
- *  │       └── C3 #3 (z/夾爪) → z馬達+伺服       │
- *  └─────────────────────────────────────────────┘
+ *  分散式架構（2026/05/05 更新）：
+ *  ┌──────────────────────────────────────────────────────┐
+ *  │  ESP32 主控板 (BLE, USB 插電腦供電)                    │
+ *  │  ├── BLE UART Service 接收                           │
+ *  │  └── ESP-NOW 分發至：                                 │
+ *  │       ├── C3 #1 (腿部)     → L298N #1, JGB37-520 ×2 │
+ *  │       ├── C3 #2 (大圓盤+z) → L298N #2, XD-25GA+JGY  │
+ *  │       └── C3 #3 (Servo)    → MG996R ×3               │
+ *  └──────────────────────────────────────────────────────┘
  *
  *  BLE 指令格式：
  *  字串指令（大寫）：
@@ -31,8 +31,8 @@
  *
  *  單字元指令（與 BluetoothSerial 版相容）：
  *    腿部: f/b/l/r/q/e/F/B/L/R
- *    手臂: w/s/a/d
- *    z/夾爪: u/j/o/p/t/y/h
+ *    大圓盤+z: a/d/u/j
+ *    Servo/夾爪: w/s/i/k/o/p/h
  *    停止: 0
  *
  *  BLE UART Service UUID:
@@ -57,9 +57,9 @@ const uint8_t ESPNOW_CHANNEL = 1;
 //  取得方式：上傳 macaddress/macaddress.ino 至各 C3，
 //           開啟 Serial Monitor (115200) 記錄 MAC。
 // =====================================================
-uint8_t Leg_Address[]     = {0x58, 0x8C, 0x81, 0x9D, 0xF6, 0x90};  // C3 #1 腿部
-uint8_t r_theta_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #2 手臂 r/θ  ⚠ TODO
-uint8_t z_clap_Address[]  = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #3 z/夾爪    ⚠ TODO
+uint8_t Leg_Address[]        = {0x58, 0x8C, 0x81, 0x9D, 0xF6, 0x90};  // C3 #1 腿部
+uint8_t turntableZ_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #2 大圓盤+z  ⚠ TODO
+uint8_t servoClaw_Address[]  = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #3 Servo     ⚠ TODO
 
 // =====================================================
 //  BLE UART Service UUID
@@ -94,36 +94,36 @@ typedef struct leg_ack_message {
   uint8_t status;
 } leg_ack_message;
 
-// 手臂 r/θ 指令
-enum GripperCommand {
-  CMD_GRIPPER_STOP = 0,
-  CMD_ARM_EXTEND,    // r+
-  CMD_ARM_RETRACT,   // r-
-  CMD_ARM_LEFT,      // θ-
-  CMD_ARM_RIGHT,     // θ+
+// 大圓盤 + z 升降指令（C3 #2）
+enum TurntableZCommand {
+  CMD_TZ_STOP = 0,
+  CMD_TURNTABLE_LEFT,   // 1 - 大圓盤左轉
+  CMD_TURNTABLE_RIGHT,  // 2 - 大圓盤右轉
+  CMD_Z_UP,             // 3 - z 上升
+  CMD_Z_DOWN,           // 4 - z 下降
 };
 
-typedef struct gripper_now_message {
+typedef struct turntable_z_now_message {
   uint8_t command;
   uint8_t speed;
-} gripper_now_message;
+} turntable_z_now_message;
 
-// z/夾爪指令
-enum ZClawCommand {
-  CMD_ZCLAW_STOP = 0,
-  CMD_Z_UP,          // z 上升
-  CMD_Z_DOWN,        // z 下降
-  CMD_CLAW_OPEN,     // 夾爪張開（伺服）
-  CMD_CLAW_CLOSE,    // 夾爪閉合（伺服）
-  CMD_LID_OPEN,      // 蓋板開（伺服）
-  CMD_LID_CLOSE,     // 蓋板關（伺服）
-  CMD_HOME,          // 歸位
+// Servo / 夾爪指令（C3 #3）
+enum ServoClawCommand {
+  CMD_SERVO_STOP = 0,
+  CMD_R_EXTEND,        // 1 - r 齒條伸出
+  CMD_R_RETRACT,       // 2 - r 齒條縮回
+  CMD_THETA_POS,       // 3 - θ 旋轉（正）
+  CMD_THETA_NEG,       // 4 - θ 旋轉（反）
+  CMD_CLAW_OPEN,       // 5 - 夾爪張開
+  CMD_CLAW_CLOSE,      // 6 - 夾爪閉合
+  CMD_SERVO_HOME,      // 7 - 歸位
 };
 
-typedef struct zclaw_now_message {
+typedef struct servo_claw_now_message {
   uint8_t command;
-  uint8_t speed;     // DC 馬達速度 or 伺服角度
-} zclaw_now_message;
+  uint8_t speed;
+} servo_claw_now_message;
 
 // =====================================================
 //  速度設定
@@ -147,15 +147,15 @@ uint8_t legCommand = CMD_LEG_STOP;
 uint8_t legSpeed = FULL_SPEED;
 bool legDirty = false;
 
-// 手臂指令佇列
-uint8_t gripperCommand = CMD_GRIPPER_STOP;
-uint8_t gripperSpeed = FULL_SPEED;
-bool gripperDirty = false;
+// 大圓盤+z 指令佇列
+uint8_t tzCommand = CMD_TZ_STOP;
+uint8_t tzSpeed = FULL_SPEED;
+bool tzDirty = false;
 
-// z/夾爪指令佇列
-uint8_t zclawCommand = CMD_ZCLAW_STOP;
-uint8_t zclawSpeed = FULL_SPEED;
-bool zclawDirty = false;
+// Servo/夾爪指令佇列
+uint8_t servoCommand = CMD_SERVO_STOP;
+uint8_t servoSpeed = FULL_SPEED;
+bool servoDirty = false;
 
 // =====================================================
 //  工具函式
@@ -194,16 +194,16 @@ void queueLegCommand(uint8_t cmd, uint8_t spd) {
   legDirty = true;
 }
 
-void queueGripperCommand(uint8_t cmd, uint8_t spd) {
-  gripperCommand = cmd;
-  gripperSpeed = spd;
-  gripperDirty = true;
+void queueTZCommand(uint8_t cmd, uint8_t spd) {
+  tzCommand = cmd;
+  tzSpeed = spd;
+  tzDirty = true;
 }
 
-void queueZClawCommand(uint8_t cmd, uint8_t spd) {
-  zclawCommand = cmd;
-  zclawSpeed = spd;
-  zclawDirty = true;
+void queueServoCommand(uint8_t cmd, uint8_t spd) {
+  servoCommand = cmd;
+  servoSpeed = spd;
+  servoDirty = true;
 }
 
 // =====================================================
@@ -221,26 +221,26 @@ void sendPendingCommands() {
     legDirty = false;
   }
 
-  if (gripperDirty) {
-    gripper_now_message msg = {gripperCommand, gripperSpeed};
-    esp_err_t result = esp_now_send(r_theta_Address, (uint8_t *)&msg, sizeof(msg));
+  if (tzDirty) {
+    turntable_z_now_message msg = {tzCommand, tzSpeed};
+    esp_err_t result = esp_now_send(turntableZ_Address, (uint8_t *)&msg, sizeof(msg));
     if (result == ESP_OK) {
-      notifyBle("-> Gripper CMD:" + String(gripperCommand) + " SPD:" + String(gripperSpeed));
+      notifyBle("-> TZ CMD:" + String(tzCommand) + " SPD:" + String(tzSpeed));
     } else {
-      notifyBle("!! Gripper send err:" + String(result));
+      notifyBle("!! TZ send err:" + String(result));
     }
-    gripperDirty = false;
+    tzDirty = false;
   }
 
-  if (zclawDirty) {
-    zclaw_now_message msg = {zclawCommand, zclawSpeed};
-    esp_err_t result = esp_now_send(z_clap_Address, (uint8_t *)&msg, sizeof(msg));
+  if (servoDirty) {
+    servo_claw_now_message msg = {servoCommand, servoSpeed};
+    esp_err_t result = esp_now_send(servoClaw_Address, (uint8_t *)&msg, sizeof(msg));
     if (result == ESP_OK) {
-      notifyBle("-> ZClaw CMD:" + String(zclawCommand) + " SPD:" + String(zclawSpeed));
+      notifyBle("-> Servo CMD:" + String(servoCommand) + " SPD:" + String(servoSpeed));
     } else {
-      notifyBle("!! ZClaw send err:" + String(result));
+      notifyBle("!! Servo send err:" + String(result));
     }
-    zclawDirty = false;
+    servoDirty = false;
   }
 }
 
@@ -252,10 +252,10 @@ void OnDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
 
   if (destination != nullptr && memcmp(destination, Leg_Address, 6) == 0) {
     Serial.print("ESP-NOW -> Leg: ");
-  } else if (destination != nullptr && memcmp(destination, r_theta_Address, 6) == 0) {
-    Serial.print("ESP-NOW -> R_Theta: ");
-  } else if (destination != nullptr && memcmp(destination, z_clap_Address, 6) == 0) {
-    Serial.print("ESP-NOW -> Z_Claw: ");
+  } else if (destination != nullptr && memcmp(destination, turntableZ_Address, 6) == 0) {
+    Serial.print("ESP-NOW -> TurntableZ: ");
+  } else if (destination != nullptr && memcmp(destination, servoClaw_Address, 6) == 0) {
+    Serial.print("ESP-NOW -> ServoClaw: ");
   } else {
     Serial.print("ESP-NOW -> Unknown: ");
   }
@@ -301,26 +301,26 @@ void processSingleChar(char c) {
     case 'L': queueLegCommand(CMD_LEFT, HALF_SPEED); notifyBle("CMD: Left(half)"); break;
     case 'R': queueLegCommand(CMD_RIGHT, HALF_SPEED); notifyBle("CMD: Right(half)"); break;
 
-    // ===== 手臂 r/θ → C3 #2 =====
-    case 'w': queueGripperCommand(CMD_ARM_EXTEND, FULL_SPEED); notifyBle("CMD: Arm Extend"); break;
-    case 's': queueGripperCommand(CMD_ARM_RETRACT, FULL_SPEED); notifyBle("CMD: Arm Retract"); break;
-    case 'a': queueGripperCommand(CMD_ARM_LEFT, FULL_SPEED); notifyBle("CMD: Arm Left"); break;
-    case 'd': queueGripperCommand(CMD_ARM_RIGHT, FULL_SPEED); notifyBle("CMD: Arm Right"); break;
+    // ===== 大圓盤 + z → C3 #2 =====
+    case 'a': queueTZCommand(CMD_TURNTABLE_LEFT, FULL_SPEED); notifyBle("CMD: Turntable Left"); break;
+    case 'd': queueTZCommand(CMD_TURNTABLE_RIGHT, FULL_SPEED); notifyBle("CMD: Turntable Right"); break;
+    case 'u': queueTZCommand(CMD_Z_UP, FULL_SPEED); notifyBle("CMD: Z Up"); break;
+    case 'j': queueTZCommand(CMD_Z_DOWN, FULL_SPEED); notifyBle("CMD: Z Down"); break;
 
-    // ===== z/夾爪 → C3 #3 =====
-    case 'u': queueZClawCommand(CMD_Z_UP, FULL_SPEED); notifyBle("CMD: Z Up"); break;
-    case 'j': queueZClawCommand(CMD_Z_DOWN, FULL_SPEED); notifyBle("CMD: Z Down"); break;
-    case 'o': queueZClawCommand(CMD_CLAW_OPEN, 0); notifyBle("CMD: Claw Open"); break;
-    case 'p': queueZClawCommand(CMD_CLAW_CLOSE, 0); notifyBle("CMD: Claw Close"); break;
-    case 't': queueZClawCommand(CMD_LID_OPEN, 0); notifyBle("CMD: Lid Open"); break;
-    case 'y': queueZClawCommand(CMD_LID_CLOSE, 0); notifyBle("CMD: Lid Close"); break;
-    case 'h': queueZClawCommand(CMD_HOME, 0); notifyBle("CMD: Home"); break;
+    // ===== Servo / 夾爪 → C3 #3 =====
+    case 'w': queueServoCommand(CMD_R_EXTEND, 0); notifyBle("CMD: r Extend"); break;
+    case 's': queueServoCommand(CMD_R_RETRACT, 0); notifyBle("CMD: r Retract"); break;
+    case 'i': queueServoCommand(CMD_THETA_POS, 0); notifyBle("CMD: Theta+"); break;
+    case 'k': queueServoCommand(CMD_THETA_NEG, 0); notifyBle("CMD: Theta-"); break;
+    case 'o': queueServoCommand(CMD_CLAW_OPEN, 0); notifyBle("CMD: Claw Open"); break;
+    case 'p': queueServoCommand(CMD_CLAW_CLOSE, 0); notifyBle("CMD: Claw Close"); break;
+    case 'h': queueServoCommand(CMD_SERVO_HOME, 0); notifyBle("CMD: Home"); break;
 
     // ===== 全部停止 =====
     case '0':
       queueLegCommand(CMD_LEG_STOP, 0);
-      queueGripperCommand(CMD_GRIPPER_STOP, 0);
-      queueZClawCommand(CMD_ZCLAW_STOP, 0);
+      queueTZCommand(CMD_TZ_STOP, 0);
+      queueServoCommand(CMD_SERVO_STOP, 0);
       notifyBle("CMD: ALL STOP");
       break;
 
@@ -372,48 +372,42 @@ void handleBleCommand(String commandText) {
     queueLegCommand(CMD_SPIN_RIGHT, FULL_SPEED);
     notifyBle("CMD: SPIN RIGHT");
   }
-  // ----- 手臂字串指令 -----
-  else if (upperCmd == "EXTEND") {
-    queueGripperCommand(CMD_ARM_EXTEND, FULL_SPEED);
-    notifyBle("CMD: ARM EXTEND");
-  } else if (upperCmd == "RETRACT") {
-    queueGripperCommand(CMD_ARM_RETRACT, FULL_SPEED);
-    notifyBle("CMD: ARM RETRACT");
-  } else if (upperCmd == "ARMLEFT" || upperCmd == "AL") {
-    queueGripperCommand(CMD_ARM_LEFT, FULL_SPEED);
-    notifyBle("CMD: ARM LEFT");
-  } else if (upperCmd == "ARMRIGHT" || upperCmd == "AR") {
-    queueGripperCommand(CMD_ARM_RIGHT, FULL_SPEED);
-    notifyBle("CMD: ARM RIGHT");
-  }
-  // ----- z/夾爪字串指令 -----
-  else if (upperCmd == "UP" || upperCmd == "ZU") {
-    queueZClawCommand(CMD_Z_UP, FULL_SPEED);
+  // ----- 大圓盤+z 字串指令 -----
+  else if (upperCmd == "TL" || upperCmd == "TURNTABLELEFT") {
+    queueTZCommand(CMD_TURNTABLE_LEFT, FULL_SPEED);
+    notifyBle("CMD: TURNTABLE LEFT");
+  } else if (upperCmd == "TR" || upperCmd == "TURNTABLERIGHT") {
+    queueTZCommand(CMD_TURNTABLE_RIGHT, FULL_SPEED);
+    notifyBle("CMD: TURNTABLE RIGHT");
+  } else if (upperCmd == "UP" || upperCmd == "ZU") {
+    queueTZCommand(CMD_Z_UP, FULL_SPEED);
     notifyBle("CMD: Z UP");
   } else if (upperCmd == "DOWN" || upperCmd == "ZD") {
-    queueZClawCommand(CMD_Z_DOWN, FULL_SPEED);
+    queueTZCommand(CMD_Z_DOWN, FULL_SPEED);
     notifyBle("CMD: Z DOWN");
+  }
+  // ----- Servo/夾爪字串指令 -----
+  else if (upperCmd == "EXTEND") {
+    queueServoCommand(CMD_R_EXTEND, 0);
+    notifyBle("CMD: R EXTEND");
+  } else if (upperCmd == "RETRACT") {
+    queueServoCommand(CMD_R_RETRACT, 0);
+    notifyBle("CMD: R RETRACT");
   } else if (upperCmd == "OPEN") {
-    queueZClawCommand(CMD_CLAW_OPEN, 0);
+    queueServoCommand(CMD_CLAW_OPEN, 0);
     notifyBle("CMD: CLAW OPEN");
   } else if (upperCmd == "CLOSE") {
-    queueZClawCommand(CMD_CLAW_CLOSE, 0);
+    queueServoCommand(CMD_CLAW_CLOSE, 0);
     notifyBle("CMD: CLAW CLOSE");
-  } else if (upperCmd == "TILT" || upperCmd == "LO") {
-    queueZClawCommand(CMD_LID_OPEN, 0);
-    notifyBle("CMD: LID OPEN");
-  } else if (upperCmd == "FLAT" || upperCmd == "LC") {
-    queueZClawCommand(CMD_LID_CLOSE, 0);
-    notifyBle("CMD: LID CLOSE");
   } else if (upperCmd == "HOME") {
-    queueZClawCommand(CMD_HOME, 0);
+    queueServoCommand(CMD_SERVO_HOME, 0);
     notifyBle("CMD: HOME");
   }
   // ----- 全部停止 -----
   else if (upperCmd == "STOP") {
     queueLegCommand(CMD_LEG_STOP, 0);
-    queueGripperCommand(CMD_GRIPPER_STOP, 0);
-    queueZClawCommand(CMD_ZCLAW_STOP, 0);
+    queueTZCommand(CMD_TZ_STOP, 0);
+    queueServoCommand(CMD_SERVO_STOP, 0);
     notifyBle("CMD: ALL STOP");
   }
   // ----- 速度設定 -----
@@ -443,8 +437,8 @@ class ControllerServerCallbacks : public BLEServerCallbacks {
     bleClientConnected = false;
     // 斷線時急停所有子控板
     queueLegCommand(CMD_LEG_STOP, 0);
-    queueGripperCommand(CMD_GRIPPER_STOP, 0);
-    queueZClawCommand(CMD_ZCLAW_STOP, 0);
+    queueTZCommand(CMD_TZ_STOP, 0);
+    queueServoCommand(CMD_SERVO_STOP, 0);
     server->getAdvertising()->start();
     Serial.println("BLE disconnected, advertising restarted, ALL STOP");
   }
@@ -500,8 +494,8 @@ void setupEspNow() {
 
   // 註冊 3 個子控板 Peer
   addPeer(Leg_Address, "C3#1 Leg");
-  addPeer(r_theta_Address, "C3#2 R_Theta");
-  addPeer(z_clap_Address, "C3#3 Z_Claw");
+  addPeer(turntableZ_Address, "C3#2 TurntableZ");
+  addPeer(servoClaw_Address, "C3#3 ServoClaw");
 
   Serial.println("ESP-NOW initialized with 3 peers");
 }
@@ -557,11 +551,11 @@ void setup() {
   Serial.print("Leg peer: ");
   printMacAddress(Leg_Address);
   Serial.println();
-  Serial.print("Gripper peer: ");
-  printMacAddress(r_theta_Address);
+  Serial.print("TurntableZ peer: ");
+  printMacAddress(turntableZ_Address);
   Serial.println();
-  Serial.print("ZClaw peer: ");
-  printMacAddress(z_clap_Address);
+  Serial.print("ServoClaw peer: ");
+  printMacAddress(servoClaw_Address);
   Serial.println();
 
   setupEspNow();
@@ -569,17 +563,18 @@ void setup() {
 
   // 初始化：全部停止
   queueLegCommand(CMD_LEG_STOP, 0);
-  queueGripperCommand(CMD_GRIPPER_STOP, 0);
-  queueZClawCommand(CMD_ZCLAW_STOP, 0);
+  queueTZCommand(CMD_TZ_STOP, 0);
+  queueServoCommand(CMD_SERVO_STOP, 0);
 
   Serial.println();
   Serial.println("--- Command Reference ---");
-  Serial.println("  Leg:     f/b/l/r/q/e (full)  F/B/L/R (half)");
-  Serial.println("  Arm:     w=extend s=retract a=left d=right");
-  Serial.println("  Z/Claw:  u=up j=down o=open p=close");
-  Serial.println("           t=lid_open y=lid_close h=home");
-  Serial.println("  All:     0=STOP ALL");
-  Serial.println("  BLE:     FORWARD, BACKWARD, LEFT, RIGHT, STOP, SPD:200");
+  Serial.println("  Leg:       f/b/l/r/q/e (full)  F/B/L/R (half)");
+  Serial.println("  Turntable: a=left d=right");
+  Serial.println("  Z:         u=up j=down");
+  Serial.println("  Servo:     w=r_extend s=r_retract i=theta+ k=theta-");
+  Serial.println("  Claw:      o=open p=close h=home");
+  Serial.println("  All:       0=STOP ALL");
+  Serial.println("  BLE:       FORWARD, BACKWARD, STOP, SPD:200");
   Serial.println("-------------------------");
 }
 

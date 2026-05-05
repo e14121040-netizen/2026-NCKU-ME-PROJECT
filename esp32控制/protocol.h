@@ -14,6 +14,11 @@
  *    Arduino IDE 的 include 路徑從 sketch 目錄開始，
  *    因此使用 "../protocol.h" 可正確指向 esp32控制/ 根目錄。
  *    若 IDE 版本不支援，請將此檔案複製到各 sketch 目錄中。
+ *
+ *  架構（2026/05/05 更新）：
+ *    C3 #1 — 腿部步行（L298N #1, JGB37-520 ×2）
+ *    C3 #2 — 大圓盤旋轉 + z 升降（L298N #2, XD-25GA 370 + JGY370）
+ *    C3 #3 — Servo 控制（MG996R 360° r齒條 + MG996R 180° θ + MG996R 180° 夾爪開合）
  */
 
 #ifndef PROTOCOL_H
@@ -31,6 +36,7 @@ const uint8_t SPEED_MAX  = 255;
 
 // =====================================================
 //  腿部指令（C3 #1 LegController）
+//  L298N #1 → JGB37-520 ×2 差速轉向
 // =====================================================
 enum LegCommand {
   CMD_LEG_STOP = 0,
@@ -54,38 +60,43 @@ typedef struct leg_ack_message {
 } leg_ack_message;
 
 // =====================================================
-//  手臂 r/θ 指令（C3 #2 GripperController）
+//  大圓盤 + z 升降指令（C3 #2 TurntableZController）
+//  L298N #2 Ch.A → XD-25GA 370 大圓盤旋轉
+//  L298N #2 Ch.B → JGY370 z 升降（蝸桿自鎖）
 // =====================================================
-enum GripperCommand {
-  CMD_GRIPPER_STOP = 0,
-  CMD_ARM_EXTEND,    // 1 - r+ 手臂伸出
-  CMD_ARM_RETRACT,   // 2 - r- 手臂縮回
-  CMD_ARM_LEFT,      // 3 - θ- 手臂左轉
-  CMD_ARM_RIGHT,     // 4 - θ+ 手臂右轉
+enum TurntableZCommand {
+  CMD_TZ_STOP = 0,
+  CMD_TURNTABLE_LEFT,   // 1 - 大圓盤左轉
+  CMD_TURNTABLE_RIGHT,  // 2 - 大圓盤右轉
+  CMD_Z_UP,             // 3 - z 上升
+  CMD_Z_DOWN,           // 4 - z 下降
 };
 
-typedef struct gripper_now_message {
+typedef struct turntable_z_now_message {
   uint8_t command;
   uint8_t speed;
-} gripper_now_message;
+} turntable_z_now_message;
 
 // =====================================================
-//  z/夾爪指令（C3 #3 ZClawController）
+//  Servo / 夾爪指令（C3 #3 ServoClawController）
+//  MG996R 360° → r 齒條伸縮
+//  MG996R 180° → θ 旋轉
+//  MG996R 180° → 夾爪開合
 // =====================================================
-enum ZClawCommand {
-  CMD_ZCLAW_STOP = 0,
-  CMD_Z_UP,          // 1 - z 上升
-  CMD_Z_DOWN,        // 2 - z 下降
-  CMD_CLAW_OPEN,     // 3 - 夾爪張開（伺服）
-  CMD_CLAW_CLOSE,    // 4 - 夾爪閉合（伺服）
-  CMD_LID_OPEN,      // 5 - 蓋板開（伺服）
-  CMD_LID_CLOSE,     // 6 - 蓋板關（伺服）
-  CMD_HOME,          // 7 - 歸位
+enum ServoClawCommand {
+  CMD_SERVO_STOP = 0,
+  CMD_R_EXTEND,        // 1 - r 齒條伸出（360° Servo 正轉）
+  CMD_R_RETRACT,       // 2 - r 齒條縮回（360° Servo 反轉）
+  CMD_THETA_POS,       // 3 - θ 旋轉（正方向）
+  CMD_THETA_NEG,       // 4 - θ 旋轉（反方向）
+  CMD_CLAW_OPEN,       // 5 - 夾爪張開
+  CMD_CLAW_CLOSE,      // 6 - 夾爪閉合
+  CMD_SERVO_HOME,      // 7 - 歸位（r 縮回 + 夾爪張開）
 };
 
-typedef struct zclaw_now_message {
+typedef struct servo_claw_now_message {
   uint8_t command;
-  uint8_t speed;     // DC 馬達速度 or 伺服角度
-} zclaw_now_message;
+  uint8_t speed;     // 360° Servo: 速度控制, 180° Servo: 目標角度
+} servo_claw_now_message;
 
 #endif // PROTOCOL_H
