@@ -23,8 +23,8 @@
 |------|--------|------|
 | `00_macaddress/` | 任意 ESP32/C3 | 工具：印出 MAC 地址（設定 ESP-NOW 時使用） |
 | `01_MainController/` | ESP32 | **主控板**：BLE UART + ESP-NOW 指令分發（USB 插電腦供電） |
-| `02_LegController/` | ESP32-C3 #1 | **腿部**：L298N #1 驅動 JGB37-520 ×2（差速轉向） |
-| `03_TurntableZController/` | ESP32-C3 #2 | **大圓盤+z**：L298N #2 驅動 XD-25GA 370 + JGY370 + 限位開關 |
+| `02_LegController/` | ESP32-C3 #1 | **腿部**：BTS7960 ×2 驅動 JGB37-520 ×2（差速轉向） |
+| `03_TurntableZController/` | ESP32-C3 #2 | **大圓盤+z**：BTS7960 #3 驅動 XD-25GA 370 + L298N #2 驅動 JGY370 + 限位開關 |
 | `04_ServoClawController/` | ESP32-C3 #3 | **Servo**：MG996R 360°(r齒條) + 180°(θ) + 180°(夾爪) + 限位開關 |
 | `protocol.h` | — | 共用通訊協議（enum + struct 定義） |
 | `_test/` | — | 測試用程式（按鈕控制原型、Servo 測試、ESP32 基礎測試） |
@@ -116,7 +116,8 @@ arduino-cli compile --fqbn esp32:esp32:esp32c3 04_ServoClawController/
 - **Servo 馬達供電**：接 XL4015 5A 降壓模組 5V 輸出（Servo 專用）
 - **MCU 供電**：ESP32-C3 ×3 接 LM2596 3A 降壓模組 5V 輸出（MCU 專用）
 - **ESP32 主控板**：USB 插電腦供電，與機器人電源獨立（ESP-NOW 無線通訊）
-- **L298N ENA/ENB 跳線帽**：必須拔除，否則 PWM 調速無效
+- **BTS7960 R_EN/L_EN**：接 3.3V 常開（腳部、大圓盤）
+- **L298N #2 ENA/ENB 跳線帽**：僅 ENB 需拔除（z 升降 PWM），ENA 不再使用
 - **ESP32Servo 函式庫**：`04_ServoClawController` 需安裝 `ESP32Servo` 函式庫
 - **共用協議**：`protocol.h` 定義所有通訊的 enum 和 struct，修改時需同步更新
 
@@ -194,7 +195,7 @@ arduino-cli monitor -p /dev/cu.usbmodem* --config baudrate=115200
 
 ### C3 #1 腿部（LegController）測試
 
-**前置**：L298N #1 已接好、馬達已接好、C3 #1 上傳 `02_LegController.ino`
+**前置**：BTS7960 ×2 已接好、馬達已接好、C3 #1 上傳 `02_LegController.ino`
 
 | 步驟 | Serial 輸入 | 預期結果 |
 |------|------------|---------|
@@ -209,15 +210,15 @@ arduino-cli monitor -p /dev/cu.usbmodem* --config baudrate=115200
 | 9 | `?` | 顯示目前速度 |
 
 **故障排查**：
-- 馬達不轉 → 確認 L298N ENA/ENB **跳線帽已拔除**
-- 方向反了 → 交換 L298N OUT 的兩條馬達線
+- 馬達不轉 → 確認 BTS7960 R_EN/L_EN 已接 3.3V，電源 B+/B- 接線正確
+- 方向反了 → 交換 BTS7960 M+/M- 的兩條馬達線
 - Serial 無輸出 → 確認 **USB CDC On Boot: Enabled**
 
 ---
 
 ### C3 #2 大圓盤+z（TurntableZController）測試
 
-**前置**：L298N #2 已接好、馬達已接好、限位開關已接好
+**前置**：BTS7960 #3 + L298N #2 已接好、馬達已接好、限位開關已接好
 
 | 步驟 | Serial 輸入 | 預期結果 |
 |------|------------|---------|

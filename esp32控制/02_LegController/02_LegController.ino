@@ -7,7 +7,7 @@
  *  功能：
  *  - 透過 ESP-NOW 接收主控板（ESP32）腿部指令
  *  - 控制左右兩顆 JGB37-520 直流減速馬達（差速轉向）
- *  - 使用 L298N 驅動馬達
+ *  - 使用 BTS7960 (IBT-2) ×2 驅動馬達（MOSFET H-Bridge）
  *  - Serial Monitor 手動測試模式
  *
  *  指令協議（ESP-NOW 接收 / Serial 手動測試）：
@@ -24,14 +24,25 @@
  *    'q'=左旋 'e'=右旋 '0'=停止
  *    '+'=加速 '-'=減速 '?'=狀態
  *
- *  硬體接線（ESP32-C3 Super Mini → L298N）：
- *  GPIO 0  → IN1 (左馬達)
- *  GPIO 1  → IN2
- *  GPIO 3  → ENA (PWM)
- *  GPIO 4  → IN3 (右馬達)
- *  GPIO 5  → IN4
- *  GPIO 6  → ENB (PWM)
- *  GND     → GND (共地)
+ *  硬體接線（ESP32-C3 Super Mini → BTS7960 ×2）：
+ *
+ *  【BTS7960 #1 — 左馬達】
+ *  GPIO 0  → RPWM (正轉 PWM)
+ *  GPIO 1  → LPWM (反轉 PWM)
+ *  R_EN / L_EN → 接 3.3V（常開）
+ *
+ *  【BTS7960 #2 — 右馬達】
+ *  GPIO 3  → RPWM (正轉 PWM)
+ *  GPIO 4  → LPWM (反轉 PWM)
+ *  R_EN / L_EN → 接 3.3V（常開）
+ *
+ *  GND     → BTS7960 GND（共地）
+ *
+ *  BTS7960 控制原理：
+ *  - 正轉：RPWM = PWM duty, LPWM = 0
+ *  - 反轉：RPWM = 0, LPWM = PWM duty
+ *  - 停止：RPWM = 0, LPWM = 0（馬達浮接）
+ *  - 煞車：RPWM = 255, LPWM = 255（主動煞車）
  */
 
 #include <esp_now.h>
@@ -59,25 +70,26 @@ leg_now_message incomingMsg;
 bool newDataReceived = false;
 
 // =====================================================
-//  L298N 腳位定義 — ESP32-C3 Super Mini
+//  BTS7960 腳位定義 — ESP32-C3 Super Mini
 // =====================================================
-// 左馬達 (Motor A)
-const int motorL_Pin1 = 0;
-const int motorL_Pin2 = 1;
-const int motorL_EN   = 3;   // PWM
+// 左馬達 (BTS7960 #1)
+const int motorL_RPWM = 0;   // 正轉 PWM
+const int motorL_LPWM = 1;   // 反轉 PWM
 
-// 右馬達 (Motor B)
-const int motorR_Pin1 = 4;
-const int motorR_Pin2 = 5;
-const int motorR_EN   = 6;   // PWM
+// 右馬達 (BTS7960 #2)
+const int motorR_RPWM = 3;   // 正轉 PWM
+const int motorR_LPWM = 4;   // 反轉 PWM
 
 // =====================================================
 //  PWM 設定
 // =====================================================
-const int pwmFreq       = 30000;
+const int pwmFreq       = 20000;  // 20kHz (BTS7960 最佳範圍, 超出人耳)
 const int pwmResolution = 8;      // 8-bit → 0~255
-const int pwmChannel_L  = 0;
-const int pwmChannel_R  = 1;
+// LEDC channels: 0=L_RPWM, 1=L_LPWM, 2=R_RPWM, 3=R_LPWM
+const int pwmCh_L_RPWM = 0;
+const int pwmCh_L_LPWM = 1;
+const int pwmCh_R_RPWM = 2;
+const int pwmCh_R_LPWM = 3;
 
 // =====================================================
 //  速度設定
@@ -103,82 +115,69 @@ void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
 }
 
 // =====================================================
-//  馬達控制函式
+//  BTS7960 馬達控制函式
 // =====================================================
 
+// 設定單顆馬達速度與方向
+// speed > 0: 正轉, speed < 0: 反轉, speed = 0: 停止
+void setMotor(int rpwmPin, int lpwmPin, int speed) {
+  if (speed > 0) {
+    ledcWrite(rpwmPin, speed);
+    ledcWrite(lpwmPin, 0);
+  } else if (speed < 0) {
+    ledcWrite(rpwmPin, 0);
+    ledcWrite(lpwmPin, -speed);
+  } else {
+    ledcWrite(rpwmPin, 0);
+    ledcWrite(lpwmPin, 0);
+  }
+}
+
 void stopMotors() {
-  digitalWrite(motorL_Pin1, LOW);
-  digitalWrite(motorL_Pin2, LOW);
-  digitalWrite(motorR_Pin1, LOW);
-  digitalWrite(motorR_Pin2, LOW);
-  ledcWrite(motorL_EN, 0);
-  ledcWrite(motorR_EN, 0);
+  setMotor(motorL_RPWM, motorL_LPWM, 0);
+  setMotor(motorR_RPWM, motorR_LPWM, 0);
   Serial.println("=== STOP ===");
 }
 
 void forward(int spd) {
-  digitalWrite(motorL_Pin1, HIGH);
-  digitalWrite(motorL_Pin2, LOW);
-  digitalWrite(motorR_Pin1, HIGH);
-  digitalWrite(motorR_Pin2, LOW);
-  ledcWrite(motorL_EN, spd);
-  ledcWrite(motorR_EN, spd);
+  setMotor(motorL_RPWM, motorL_LPWM, spd);
+  setMotor(motorR_RPWM, motorR_LPWM, spd);
   Serial.print("Forward, speed="); Serial.println(spd);
 }
 
 void backward(int spd) {
-  digitalWrite(motorL_Pin1, LOW);
-  digitalWrite(motorL_Pin2, HIGH);
-  digitalWrite(motorR_Pin1, LOW);
-  digitalWrite(motorR_Pin2, HIGH);
-  ledcWrite(motorL_EN, spd);
-  ledcWrite(motorR_EN, spd);
+  setMotor(motorL_RPWM, motorL_LPWM, -spd);
+  setMotor(motorR_RPWM, motorR_LPWM, -spd);
   Serial.print("Backward, speed="); Serial.println(spd);
 }
 
 void turnLeft(int spd) {
   int slowSpeed = spd * TURN_RATIO / 100;
-  digitalWrite(motorL_Pin1, HIGH);
-  digitalWrite(motorL_Pin2, LOW);
-  digitalWrite(motorR_Pin1, HIGH);
-  digitalWrite(motorR_Pin2, LOW);
-  ledcWrite(motorL_EN, slowSpeed);  // 左慢
-  ledcWrite(motorR_EN, spd);        // 右快
+  setMotor(motorL_RPWM, motorL_LPWM, slowSpeed);   // 左慢
+  setMotor(motorR_RPWM, motorR_LPWM, spd);          // 右快
   Serial.print("Left Turn, L="); Serial.print(slowSpeed);
   Serial.print(", R="); Serial.println(spd);
 }
 
 void turnRight(int spd) {
   int slowSpeed = spd * TURN_RATIO / 100;
-  digitalWrite(motorL_Pin1, HIGH);
-  digitalWrite(motorL_Pin2, LOW);
-  digitalWrite(motorR_Pin1, HIGH);
-  digitalWrite(motorR_Pin2, LOW);
-  ledcWrite(motorL_EN, spd);        // 左快
-  ledcWrite(motorR_EN, slowSpeed);  // 右慢
+  setMotor(motorL_RPWM, motorL_LPWM, spd);          // 左快
+  setMotor(motorR_RPWM, motorR_LPWM, slowSpeed);    // 右慢
   Serial.print("Right Turn, L="); Serial.print(spd);
   Serial.print(", R="); Serial.println(slowSpeed);
 }
 
 void spinLeft(int spd) {
   // 左反轉、右正轉 → 原地左旋
-  digitalWrite(motorL_Pin1, LOW);
-  digitalWrite(motorL_Pin2, HIGH);
-  digitalWrite(motorR_Pin1, HIGH);
-  digitalWrite(motorR_Pin2, LOW);
-  ledcWrite(motorL_EN, spd);
-  ledcWrite(motorR_EN, spd);
+  setMotor(motorL_RPWM, motorL_LPWM, -spd);
+  setMotor(motorR_RPWM, motorR_LPWM, spd);
   Serial.print("Spin Left, speed="); Serial.println(spd);
 }
 
 void spinRight(int spd) {
   // 左正轉、右反轉 → 原地右旋
-  digitalWrite(motorL_Pin1, HIGH);
-  digitalWrite(motorL_Pin2, LOW);
-  digitalWrite(motorR_Pin1, LOW);
-  digitalWrite(motorR_Pin2, HIGH);
-  ledcWrite(motorL_EN, spd);
-  ledcWrite(motorR_EN, spd);
+  setMotor(motorL_RPWM, motorL_LPWM, spd);
+  setMotor(motorR_RPWM, motorR_LPWM, -spd);
   Serial.print("Spin Right, speed="); Serial.println(spd);
 }
 
@@ -214,20 +213,14 @@ void setup() {
 
   Serial.println("========================================");
   Serial.println("  ESP32-C3 #1 Leg Controller");
-  Serial.println("  Walking Motor Driver (L298N)");
+  Serial.println("  Walking Motor Driver (BTS7960 x2)");
   Serial.println("========================================");
 
-  // ----- 馬達腳位設定 -----
-  pinMode(motorL_Pin1, OUTPUT);
-  pinMode(motorL_Pin2, OUTPUT);
-  pinMode(motorL_EN,   OUTPUT);
-  pinMode(motorR_Pin1, OUTPUT);
-  pinMode(motorR_Pin2, OUTPUT);
-  pinMode(motorR_EN,   OUTPUT);
-
-  // ----- PWM 設定 -----
-  ledcAttachChannel(motorL_EN, pwmFreq, pwmResolution, pwmChannel_L);
-  ledcAttachChannel(motorR_EN, pwmFreq, pwmResolution, pwmChannel_R);
+  // ----- PWM 設定（4 個 LEDC channel）-----
+  ledcAttachChannel(motorL_RPWM, pwmFreq, pwmResolution, pwmCh_L_RPWM);
+  ledcAttachChannel(motorL_LPWM, pwmFreq, pwmResolution, pwmCh_L_LPWM);
+  ledcAttachChannel(motorR_RPWM, pwmFreq, pwmResolution, pwmCh_R_RPWM);
+  ledcAttachChannel(motorR_LPWM, pwmFreq, pwmResolution, pwmCh_R_LPWM);
 
   // ----- 初始停止 -----
   stopMotors();
@@ -290,6 +283,8 @@ void loop() {
       case '?':
         Serial.println("--- Status ---");
         Serial.print("  Speed: "); Serial.println(dutyCycle);
+        Serial.print("  Driver: BTS7960 x2");
+        Serial.println();
         Serial.println("--------------");
         break;
       default:
