@@ -9,13 +9,13 @@
  *  - 控制夾爪底部大圓盤旋轉（XD-25GA 370，自鎖）
  *  - 控制 z 方向升降（JGY370 蝸桿馬達，12V，自鎖）
  *  - 使用 BTS7960 (IBT-2) #3 驅動大圓盤馬達
- *  - 使用 L298N #2 驅動 z 升降馬達
+ *  - 使用 BTS7960 (IBT-2) #4 驅動 z 升降馬達
  *  - 限位開關 (Limit Switch) 安全保護
  *  - Serial Monitor 手動測試模式
  *
  *  馬達配置：
  *  - 大圓盤 (BTS7960 #3)：XD-25GA 370 — 夾爪底部大圓盤旋轉
- *  - z 升降 (L298N #2 Ch.B)：JGY370 — z 方向升降（蝸桿自鎖）
+ *  - z 升降 (BTS7960 #4)：JGY370 — z 方向升降（蝸桿自鎖）
  *
  *  指令協議（ESP-NOW 接收 / Serial 手動測試）：
  *    'a' = 大圓盤左轉
@@ -34,10 +34,11 @@
  *  GPIO 1  -> LPWM (反轉 PWM)
  *  R_EN / L_EN -> 接 3.3V（常開）
  *
- *  【L298N #2 — z 升降】
- *  GPIO 4  -> IN3 (馬達B: z 升降)
- *  GPIO 5  -> IN4
- *  GPIO 6  -> ENB (PWM)
+ *  【BTS7960 #4 — z 升降】
+ *  GPIO 3  -> RPWM (上升 PWM)
+ *  GPIO 4  -> LPWM (下降 PWM)
+ *  R_EN / L_EN -> 接 3.3V（常開）
+ *
  *  GND     -> GND (共地)
  *
  *  限位開關：
@@ -47,11 +48,10 @@
  *  GPIO 10 -> z 下降極限
  *
  *  注意：
- *  - BTS7960 R_EN/L_EN 接 3.3V 常開，不佔 GPIO
- *  - L298N #2 ENB 跳線帽要拔掉才能用 PWM 調速
+ *  - BTS7960 #3/#4 R_EN/L_EN 接 3.3V 常開，不佔 GPIO
  *  - XD-25GA 370 減速箱有自鎖效應，斷電後可保持位置
  *  - JGY370 蝸桿自鎖，斷電後不會下滑
- *  - 供電：LM2596 降壓至 5V（MCU 專用），BTS7960/L298N 直接接電池 12V
+ *  - 供電：LM2596 降壓至 5V（MCU 專用），BTS7960 直接接電池 12V
  *  - 如果大圓盤可 360° 自由旋轉，可省略 GPIO 7, 8 限位開關
  */
 
@@ -96,10 +96,9 @@ bool senderKnown = false;
 const int motorTurntable_RPWM = 0;   // 正轉 PWM
 const int motorTurntable_LPWM = 1;   // 反轉 PWM
 
-// z 升降 (L298N #2 Ch.B, JGY370)
-const int motorZ_Pin1 = 4;
-const int motorZ_Pin2 = 5;
-const int motorZ_EN   = 6;   // PWM 調速
+// z 升降 (BTS7960 #4, JGY370)
+const int motorZ_RPWM = 3;   // 上升 PWM
+const int motorZ_LPWM = 4;   // 下降 PWM
 
 // =====================================================
 //  限位開關腳位
@@ -116,10 +115,11 @@ const int limitZ_Down          = 10;  // z 下降極限
 // =====================================================
 const int pwmFreq       = 20000;  // 20kHz (BTS7960 最佳範圍)
 const int pwmResolution = 8;      // 8-bit -> 0~255
-// LEDC channels: 0=Turntable_RPWM, 1=Turntable_LPWM, 2=Z_EN
+// LEDC channels: 0=T_RPWM, 1=T_LPWM, 2=Z_RPWM, 3=Z_LPWM
 const int pwmCh_T_RPWM  = 0;
 const int pwmCh_T_LPWM  = 1;
-const int pwmChannel_Z  = 2;      // z 馬達 PWM 通道
+const int pwmCh_Z_RPWM  = 2;
+const int pwmCh_Z_LPWM  = 3;
 
 // =====================================================
 //  速度設定
@@ -139,6 +139,7 @@ unsigned long motorZ_startTime = 0;
 bool motorTurntable_running = false;
 bool motorZ_running = false;
 int turntableDirection = 0;  // +1=left, -1=right, 0=stopped (for limit switch check)
+int zDirection = 0;          // +1=up, -1=down, 0=stopped
 
 // =====================================================
 //  ESP-NOW 回調
@@ -308,50 +309,50 @@ void turntableStop() {
   Serial.println("Turntable STOP");
 }
 
-// --- z 方向：上升 ---
+// --- z 方向：上升 (BTS7960 #4) ---
 void zUp() {
   if (digitalRead(limitZ_Up) == LOW) {
     Serial.println("!! Z Up Limit Hit -> STOP");
     zStop();
     return;
   }
-  digitalWrite(motorZ_Pin1, HIGH);
-  digitalWrite(motorZ_Pin2, LOW);
-  ledcWrite(motorZ_EN, dutyCycle);
+  ledcWrite(motorZ_RPWM, dutyCycle);
+  ledcWrite(motorZ_LPWM, 0);
 
   if (!motorZ_running) {
     motorZ_running = true;
     motorZ_startTime = millis();
   }
+  zDirection = 1;
   Serial.print("Z Up, speed=");
   Serial.println(dutyCycle);
 }
 
-// --- z 方向：下降 ---
+// --- z 方向：下降 (BTS7960 #4) ---
 void zDown() {
   if (digitalRead(limitZ_Down) == LOW) {
     Serial.println("!! Z Down Limit Hit -> STOP");
     zStop();
     return;
   }
-  digitalWrite(motorZ_Pin1, LOW);
-  digitalWrite(motorZ_Pin2, HIGH);
-  ledcWrite(motorZ_EN, dutyCycle);
+  ledcWrite(motorZ_RPWM, 0);
+  ledcWrite(motorZ_LPWM, dutyCycle);
 
   if (!motorZ_running) {
     motorZ_running = true;
     motorZ_startTime = millis();
   }
+  zDirection = -1;
   Serial.print("Z Down, speed=");
   Serial.println(dutyCycle);
 }
 
 // --- z 馬達停止 ---
 void zStop() {
-  digitalWrite(motorZ_Pin1, LOW);
-  digitalWrite(motorZ_Pin2, LOW);
-  ledcWrite(motorZ_EN, 0);
+  ledcWrite(motorZ_RPWM, 0);
+  ledcWrite(motorZ_LPWM, 0);
   motorZ_running = false;
+  zDirection = 0;
   Serial.println("Motor Z STOP");
 }
 
@@ -392,13 +393,13 @@ void checkLimitSwitches() {
     }
   }
 
-  // z 方向限位
+  // z 方向限位 (BTS7960 #4)
   if (motorZ_running) {
-    if (digitalRead(motorZ_Pin1) == HIGH && digitalRead(limitZ_Up) == LOW) {
+    if (zDirection > 0 && digitalRead(limitZ_Up) == LOW) {
       Serial.println("!! Z Up Limit -> Emergency STOP");
       zStop();
     }
-    if (digitalRead(motorZ_Pin2) == HIGH && digitalRead(limitZ_Down) == LOW) {
+    if (zDirection < 0 && digitalRead(limitZ_Down) == LOW) {
       Serial.println("!! Z Down Limit -> Emergency STOP");
       zStop();
     }
@@ -445,23 +446,22 @@ void setup() {
 
   Serial.println("==========================================");
   Serial.println("  ESP32-C3 #2 Turntable + Z Controller");
-  Serial.println("  BTS7960 #3: XD-25GA 370 | L298N #2: JGY370");
+  Serial.println("  BTS7960 #3: XD-25GA 370 | BTS7960 #4: JGY370");
   Serial.println("==========================================");
 
-  // ----- 大圓盤 PWM 設定 (BTS7960) -----
+  // ----- 大圓盤 PWM 設定 (BTS7960 #3) -----
   ledcAttachChannel(motorTurntable_RPWM, pwmFreq, pwmResolution, pwmCh_T_RPWM);
   ledcAttachChannel(motorTurntable_LPWM, pwmFreq, pwmResolution, pwmCh_T_LPWM);
 
-  // ----- z 馬達腳位設定 (L298N) -----
+  // ----- z 升降 PWM 設定 (BTS7960 #4) -----
+  ledcAttachChannel(motorZ_RPWM, pwmFreq, pwmResolution, pwmCh_Z_RPWM);
+  ledcAttachChannel(motorZ_LPWM, pwmFreq, pwmResolution, pwmCh_Z_LPWM);
 
   // ----- 限位開關設定（內部上拉） -----
   pinMode(limitTurntable_Left,  INPUT_PULLUP);
   pinMode(limitTurntable_Right, INPUT_PULLUP);
   pinMode(limitZ_Up,            INPUT_PULLUP);
   pinMode(limitZ_Down,          INPUT_PULLUP);
-
-  // ----- z 馬達 PWM (L298N) 設定 -----
-  ledcAttachChannel(motorZ_EN, pwmFreq, pwmResolution, pwmChannel_Z);
 
   // ----- 初始停止 -----
   allStop();
