@@ -34,7 +34,7 @@ from pybricks.robotics import DriveBase
 ev3 = EV3Brick()
 
 # 馬達
-motor_left  = Motor(Port.D, Direction.CLOCKWISE)
+motor_left = Motor(Port.D, Direction.CLOCKWISE)
 motor_right = Motor(Port.C, Direction.CLOCKWISE)
 
 # ── 輸送帶開關：沒有接 Port A 馬達時設為 False ──
@@ -43,77 +43,84 @@ motor_conveyor = Motor(Port.A) if HAS_CONVEYOR_MOTOR else None
 
 # 底盤（DriveBase 簡化直線/轉向控制）
 # 參數需依實際輪子直徑和軸距調整
-WHEEL_DIAMETER = 56   # mm（EV3 大輪）
-AXLE_TRACK     = 120  # mm（左右輪距）
+WHEEL_DIAMETER = 56  # mm（EV3 大輪）
+AXLE_TRACK = 120  # mm（左右輪距）
 robot = DriveBase(motor_left, motor_right, WHEEL_DIAMETER, AXLE_TRACK)
 
 # 感測器
-sensor_line = ColorSensor(Port.S1)    # 循跡與停止線偵測
-touch_sensor = TouchSensor(Port.S4)   # 觸碰感測器
+sensor_line = ColorSensor(Port.S1)  # 循跡與停止線偵測
+touch_sensor = TouchSensor(Port.S4)  # 觸碰感測器
 
 # =====================================================
 #  參數設定（需實際調校）
 # =====================================================
 # PID 循跡參數
-KP = 0.6       # 比例增益（擺動大→降低，跟線不緊→提高）
-KI = 0.0       # 積分增益（先設0，穩定後再微調）
-KD = 0.3       # 微分增益（抑制震盪）
-BASE_SPEED = 60   # 基礎行駛速度 (mm/s)（速度慢更容易調參）
+KP = 0.6  # 比例增益（擺動大→降低，跟線不緊→提高）
+KI = 0.0  # 積分增益（先設0，穩定後再微調）
+KD = 0.3  # 微分增益（抑制震盪）
+BASE_SPEED = 120  # 基礎行駛速度 (mm/s)（速度慢更容易調參）
+SPEED_DROP_RATE = 1.5
+MIN_SPEED = 40
+MAX_ABS_CORRECTION = 7
 
 # 循跡閾值（可由 calibrate_sensors() 自動計算）
-LINE_THRESHOLD = 20  # 反射值低於此為黑線
+LINE_THRESHOLD = 50  # 反射值低於此為黑線
 
 # 電量檢查間隔 (ms)
 BATTERY_CHECK_INTERVAL = 10000
 
 # 輸送帶參數
-CONVEYOR_SPEED = 300    # 輸送帶馬達轉速 (deg/s)
+CONVEYOR_SPEED = 300  # 輸送帶馬達轉速 (deg/s)
 CONVEYOR_RUN_TIME = 3000  # 輸送帶運轉時間 (ms)，需依實際帶長調整
 
 # 放置區數量
 NUM_ZONES = 15
 
 # 安全參數
-LINE_FOLLOW_TIMEOUT = 30000   # 循跡逾時 (ms)，超過此時間沒偵測到停止線則停車
-MIN_BATTERY_MV = 7000         # EV3 低電量警戒 (mV)
+LINE_FOLLOW_TIMEOUT = 60000  # 循跡逾時 (ms)，超過此時間沒偵測到停止線則停車
+MIN_BATTERY_MV = 7000  # EV3 低電量警戒 (mV)
 
 # 顏色校準參數
-COLOR_DIST_THRESHOLD = 35  # RGB Manhattan 距離閾值（|dR|+|dG|+|dB| ≤ 此值則判定為該顏色）
-COLOR_MIN_R = 15           # 最低 R 通道值（排除黑/白地面誤判）
-CALIBRATION_SAMPLES = 10   # 每次校準取樣次數
-red_rgb_ref = (0, 0, 0)    # 紅線 RGB 參考值（校準後更新）
-yellow_rgb_ref = (0, 0, 0) # 黃線 RGB 參考值（校準後更新）
-colors_calibrated = False   # 是否已完成顏色校準
+COLOR_DIST_THRESHOLD = (
+    35  # RGB Manhattan 距離閾值（|dR|+|dG|+|dB| ≤ 此值則判定為該顏色）
+)
+COLOR_MIN_R = 15  # 最低 R 通道值（排除黑/白地面誤判）
+CALIBRATION_SAMPLES = 10  # 每次校準取樣次數
+red_rgb_ref = (0, 0, 0)  # 紅線 RGB 參考值（校準後更新）
+yellow_rgb_ref = (0, 0, 0)  # 黃線 RGB 參考值（校準後更新）
+colors_calibrated = False  # 是否已完成顏色校準
+
 
 # =====================================================
 #  PID 循跡控制器
 # =====================================================
 class PIDController:
     """PID 控制器用於循跡
-    
+
     PID（比例-積分-微分）控制器根據當前誤差、累積誤差和誤差變化率
     計算修正值，用於調整機器人的轉向以保持沿黑線行駛。
     """
+
     def __init__(self, kp, ki, kd):
         """初始化 PID 控制器
-        
+
         Args:
             kp (float): 比例增益
-            ki (float): 積分增益  
+            ki (float): 積分增益
             kd (float): 微分增益
         """
         self.kp = kp
         self.ki = ki
         self.kd = kd
-        self.integral = 0      # 積分項：累積誤差
-        self.last_error = 0    # 上一次誤差，用於計算微分項
-    
+        self.integral = 0  # 積分項：累積誤差
+        self.last_error = 0  # 上一次誤差，用於計算微分項
+
     def compute(self, error):
         """計算 PID 輸出值
-        
+
         Args:
             error (float): 當前誤差值（感測器反射值與閾值之差）
-            
+
         Returns:
             float: PID 計算出的修正值，用於調整轉向
         """
@@ -127,10 +134,10 @@ class PIDController:
         self.last_error = error
         # PID 公式：P + I + D
         return self.kp * error + self.ki * self.integral + self.kd * derivative
-    
+
     def reset(self):
         """重置 PID 控制器狀態
-        
+
         清除積分項和上一次誤差，通常在開始新任務時呼叫
         """
         self.integral = 0
@@ -138,6 +145,7 @@ class PIDController:
 
 
 pid = PIDController(KP, KI, KD)
+
 
 # =====================================================
 #  輔助函式
@@ -173,89 +181,108 @@ def safe_stop(message="Stopped"):
     show_status(message)
 
 
+def wait_button_press(confirmed: Button = Button.CENTER, reject: Button | None = None):
+    """等待指定的按鈕被按下。
+
+    Args:
+        confirmed: 按下該按鈕時返回 True。
+        reject: 按下該按鈕時返回 False（可為 None 表示忽略）。
+
+    Returns:
+        按下 confirmed 時回 True；若設定 reject 且按下時回 False。
+    """
+    while True:
+        pressed = ev3.buttons.pressed()
+        if confirmed in pressed:
+            wait(300)  # debounce
+            return True
+        if reject is not None and reject in pressed:
+            return False
+        wait(50)
+
+
+def rgb_multi_sampling(sensor: ColorSensor, samples=CALIBRATION_SAMPLES):
+    """多次採樣以獲得較準確的 RGB 值。
+
+    Args:
+        sensor: 進行取樣的顏色感測器。
+        samples: 取樣次數。
+
+    Returns:
+        平均後的 RGB 值（整數 tuple）。
+    """
+    r_sum, g_sum, b_sum = 0, 0, 0
+    for _ in range(samples):
+        r, g, b = sensor.rgb()
+        r_sum += r
+        g_sum += g
+        b_sum += b
+        wait(50)
+    return (r_sum // samples, g_sum // samples, b_sum // samples)
+
+
 def calibrate_sensors():
     """
     啟動時校準感測器：讀取白色地板和黑線的反射值，
-    自動計算 LINE_THRESHOLD。
     """
     global LINE_THRESHOLD
-    show_status("Calibration", "Place on WHITE", "Press Center")
-    while Button.CENTER not in ev3.buttons.pressed():
-        wait(50)
-    wait(300)  # debounce
-    white_val = sensor_line.reflection()
-    ev3.speaker.beep(frequency=600, duration=200)
+    show_status("Cal Line Thr?", "OK: Press Center", "SKIP: Press UP")
+    if wait_button_press(Button.CENTER, Button.UP):
+        # 檢查反射值
 
-    show_status("Calibration", "Place on BLACK", "Press Center")
-    while Button.CENTER not in ev3.buttons.pressed():
-        wait(50)
-    wait(300)  # debounce
-    black_val = sensor_line.reflection()
-    ev3.speaker.beep(frequency=800, duration=200)
+        # 讀取白色反射值
+        show_status("Calibration", "Place on WHITE", "Press Center")
+        wait_button_press(Button.CENTER)
+        white_val = sensor_line.reflection()
+        ev3.speaker.beep(frequency=600, duration=200)
 
-    # 取白與黑的中間值作為閾值
-    LINE_THRESHOLD = int((white_val + black_val) / 2)
+        # 讀取黑色反射值
+        show_status("Calibration", "Place on BLACK", "Press Center")
+        wait_button_press(Button.CENTER)
+        black_val = sensor_line.reflection()
+        ev3.speaker.beep(frequency=800, duration=200)
 
-    show_status(
-        "Cal Done!",
-        "W:{} B:{}".format(int(white_val), int(black_val)),
-        "Thr:{}".format(LINE_THRESHOLD)
-    )
-    wait(1500)
+        # 取 1/2 白與 1/2 黑 作為閾值
+        LINE_THRESHOLD = int((white_val + black_val) / 2)
+
+        show_status(
+            "Line Cal Done!",
+            "W:{} B:{}".format(int(white_val), int(black_val)),
+            "Thr:{}".format(LINE_THRESHOLD),
+        )
+        wait(3000)
 
 
 def calibrate_colors():
     """
-    校準紅線和黃線的 RGB 值。
-    使用者分別將感測器放在紅線和黃線上，
-    取多次平均作為判斷的參考值。
+    啟動時校準感測器：讀取紅線和黃線的 RGB 值。
     """
-    global red_rgb_ref, yellow_rgb_ref, colors_calibrated
+    global RGB_REF_RED, RGB_REF_YELLOW, COLORS_CALIBRATED
 
-    # ---- 校準紅線 ----
-    show_status("Color Cal", "Place on RED", "Press Center")
-    while Button.CENTER not in ev3.buttons.pressed():
-        wait(50)
-    wait(300)  # debounce
+    show_status("Cal Color?", "OK: Press Center", "SKIP: Press UP")
+    if wait_button_press(Button.CENTER, Button.UP):
+        # 檢查顏色
 
-    r_sum, g_sum, b_sum = 0, 0, 0
-    for _ in range(CALIBRATION_SAMPLES):
-        r, g, b = sensor_line.rgb()
-        r_sum += r
-        g_sum += g
-        b_sum += b
-        wait(50)
-    red_rgb_ref = (r_sum // CALIBRATION_SAMPLES,
-                   g_sum // CALIBRATION_SAMPLES,
-                   b_sum // CALIBRATION_SAMPLES)
-    ev3.speaker.beep(frequency=600, duration=200)
+        # 讀取紅色 RGB
+        show_status("Calibration", "Place on RED", "Press Center")
+        wait_button_press(Button.CENTER)
+        RGB_REF_RED = rgb_multi_sampling(sensor_line)
+        ev3.speaker.beep(frequency=600, duration=200)
 
-    # ---- 校準黃線 ----
-    show_status("Color Cal", "Place on YELLOW", "Press Center")
-    while Button.CENTER not in ev3.buttons.pressed():
-        wait(50)
-    wait(300)  # debounce
+        # 讀取黃色 RGB
+        show_status("Calibration", "Place on YELLOW", "Press Center")
+        wait_button_press(Button.CENTER)
+        RGB_REF_YELLOW = rgb_multi_sampling(sensor_line)
+        ev3.speaker.beep(frequency=600, duration=200)
 
-    r_sum, g_sum, b_sum = 0, 0, 0
-    for _ in range(CALIBRATION_SAMPLES):
-        r, g, b = sensor_line.rgb()
-        r_sum += r
-        g_sum += g
-        b_sum += b
-        wait(50)
-    yellow_rgb_ref = (r_sum // CALIBRATION_SAMPLES,
-                      g_sum // CALIBRATION_SAMPLES,
-                      b_sum // CALIBRATION_SAMPLES)
-    ev3.speaker.beep(frequency=800, duration=200)
+        COLORS_CALIBRATED = True
 
-    colors_calibrated = True
-
-    show_status(
-        "Color Cal Done!",
-        "R:{},{},{}".format(*red_rgb_ref),
-        "Y:{},{},{}".format(*yellow_rgb_ref)
-    )
-    wait(1500)
+        show_status(
+            "Color Cal Done!",
+            "R:{},{},{}".format(*RGB_REF_RED),
+            "Y:{},{},{}".format(*RGB_REF_YELLOW),
+        )
+        wait(3000)
 
 
 # =====================================================
@@ -264,19 +291,20 @@ def calibrate_colors():
 def read_line_position():
     """
     讀取感測器的反射值，計算與目標閾值的誤差。
-    
+
     使用左側邊緣循跡策略：
     - 當感測器在白色區域（reflection > threshold）時，誤差為正，表示需要右轉修正
     - 當感測器在黑色線上（reflection < threshold）時，誤差為負，表示需要左轉修正
-    
+
     Returns:
         tuple: (error, reflection_value)
             - error (float): 誤差值，用於 PID 計算
             - reflection_value (int): 原始反射值 (0-100)
     """
     val = sensor_line.reflection()
-    error = val - LINE_THRESHOLD
+    error = LINE_THRESHOLD - val
     return error, val
+
 
 def check_stop_color():
     """
@@ -309,6 +337,7 @@ def check_stop_color():
             return Color.RED
         return None
 
+
 def follow_line():
     """
     執行一步單感測器 PID 左緣循跡。
@@ -318,11 +347,17 @@ def follow_line():
     或定時檢測時才讀取 color。
     """
     error, ref_val = read_line_position()
-    correction = pid.compute(error)
-    
-    # 執行轉向 (速度, 轉向率)
-    robot.drive(BASE_SPEED, correction * 1)  # 係數由2改1，避免轉向過度放大
-    
+    correction = pid.compute(error) * -2
+    current_speed = max(MIN_SPEED, BASE_SPEED - int(abs(error) * SPEED_DROP_RATE))
+
+    # 防止卡死
+    if correction > 0:
+        correction = min(current_speed - MAX_ABS_CORRECTION, correction)
+    elif correction < 0:
+        correction = max(-(current_speed - MAX_ABS_CORRECTION), correction)
+
+    robot.drive(current_speed, correction)
+
     # 簡易特徵過濾：黃色/紅色的反射率通常不會是完美的 0 (黑) 或 100 (白)，
     # 這裡我們選擇每 10 次執行 1 次顏色檢測，或是當反射值處於曖昧區間時檢測。
     # 為了程式穩定性，最安全的做法是直接在循跡中定期讀取，但 EV3 顏色切換較慢。
@@ -337,7 +372,7 @@ def place_parts():
     馬達以 CONVEYOR_SPEED 正轉 CONVEYOR_RUN_TIME 毫秒後停止。
     """
     ev3.speaker.beep(frequency=800, duration=200)
-    
+
     if motor_conveyor is not None:
         # 啟動輸送帶：正轉將零件往外側推落
         motor_conveyor.run(CONVEYOR_SPEED)
@@ -349,149 +384,107 @@ def place_parts():
         wait(800)
 
 
-
 # =====================================================
 #  主程式
 # =====================================================
 def main():
     ev3.speaker.beep(frequency=500, duration=300)
     show_status("Transport Robot", "Ready!", "Press Touch/Center")
-    
+
     # ---- 等待啟動 ----
     while True:
         if touch_sensor.pressed() or Button.CENTER in ev3.buttons.pressed():
             break
         wait(50)
-    
+
     # 初始電量檢測
     if check_battery():
         wait(5000)
         # 低電量但仍允許啟動，只是警告
-    
+
     # ---- 感測器校準（可選）----
-    # 按下 EV3 上方按鈕（UP）跳過校準，按中心鈕開始校準
-    show_status("Calibrate?", "Center=Yes", "Up=Skip")
-    cal_timer = StopWatch()
-    do_calibrate = False
-    while cal_timer.time() < 3000:
-        val = sensor_line.reflection()
-        show_status(
-            "Calibrate? C=Yes",
-            "Ref: {}".format(val),
-            "Thr:{} U=Skip".format(LINE_THRESHOLD)
-        )
-        if Button.CENTER in ev3.buttons.pressed():
-            do_calibrate = True
-            break
-        if Button.UP in ev3.buttons.pressed():
-            break
-        wait(100)
-    
-    if do_calibrate:
-        calibrate_sensors()
-    
-    # ---- 顏色校準（紅線 / 黃線）----
-    show_status("Color Cal?", "Center=Yes", "Up=Skip")
-    cal_color_timer = StopWatch()
-    do_color_cal = False
-    while cal_color_timer.time() < 3000:
-        show_status("Color Cal?", "Center=Yes", "Up=Skip")
-        if Button.CENTER in ev3.buttons.pressed():
-            do_color_cal = True
-            break
-        if Button.UP in ev3.buttons.pressed():
-            break
-        wait(100)
-    
-    if do_color_cal:
-        calibrate_colors()
-    
+    wait(150)
+
+    calibrate_sensors()
+
+    calibrate_colors()
+
     ev3.speaker.beep(frequency=600, duration=200)
     wait(1000)  # 啟動延遲
-    
+
     # ---- 主循環（無限執行，直到手動停止）----
     zones_visited = 0
     battery_timer = StopWatch()  # 獨立電量檢查計時器
-    
+
     while True:
-        show_status(
-            "Running...",
-            "Placed: {}".format(zones_visited)
-        )
-        
+        show_status("Running...", "Placed: {}".format(zones_visited))
+
         pid.reset()
         segment_timer = StopWatch()
-        
+
         # ---- 循跡行駛 ----
         yellow_count = 0  # 黃線連續偵測計數（防誤判）
         while True:
             stop_color = follow_line()
-            
+
             if stop_color == Color.YELLOW:
                 yellow_count += 1
-                if yellow_count >= 1:   # 連續 1 次才確認為黃線
+                if yellow_count >= 1:  # 連續 1 次才確認為黃線
                     # 到達放置區
                     robot.stop()
                     wait(300)
-                    
+
                     # 放置零件
                     place_parts()
                     zones_visited += 1
-                    
-                    show_status(
-                        "Placed!",
-                        "Total: {}".format(zones_visited)
-                    )
-                    
+
+                    show_status("Placed!", "Total: {}".format(zones_visited))
+
                     # 前進跨越黃線，避免下次循跡立刻再偵測到黃色
                     robot.straight(10)
                     wait(300)
                     break
             else:
                 yellow_count = 0  # 非黃色則重置計數器
-            
+
             if stop_color == Color.RED:
                 # 回到起點
                 robot.stop()
                 show_status("At Start", "Waiting...")
-                
+
                 # 等待觸碰感測器啟動下一輪
                 while not touch_sensor.pressed():
                     show_status("At Start", "Waiting...")
-                    for _ in range(20):   # 20 x 100ms = 2s
+                    for _ in range(20):  # 20 x 100ms = 2s
                         wait(100)
                         if touch_sensor.pressed():
                             break
-                for _ in range(5):        # debounce 500ms
+                for _ in range(5):  # debounce 500ms
                     wait(100)
                 # 前進跨越紅線，避免下次循跡立刻再偵測到紅色
                 robot.straight(10)
                 wait(300)
                 break
-            
+
             # Timeout 保護：循跡過久表示可能脱軌
             if segment_timer.time() > LINE_FOLLOW_TIMEOUT:
                 robot.stop()
-                ev3.speaker.beep(frequency=200, duration=1000)
+                ev3.speaker.beep(frequency=200, duration=500)
                 show_status("Timeout!", "Retrying...")
-                for _ in range(20):   # 2s 短循環，Back 鍵可中斷
-                    wait(100)
+                wait(100)
                 pid.reset()
                 segment_timer.reset()
-            
+
             # 定期檢測電量（使用獨立計時器，可靠觸發）
             if battery_timer.time() > BATTERY_CHECK_INTERVAL:
                 battery_timer.reset()
                 check_battery()
-            
+
             wait(10)  # 循跡迴圈延遲
-    
+
     # ---- 任務完成 ----
     robot.stop()
-    show_status(
-        "Mission Complete!",
-        "Zones: {}".format(zones_visited)
-    )
+    show_status("Mission Complete!", "Zones: {}".format(zones_visited))
     ev3.speaker.beep(frequency=1000, duration=1000)
 
 
