@@ -8,12 +8,7 @@ graph TD
     classDef note fill:#fcfcfa,stroke:#333,stroke-dasharray: 5 5,stroke-width:2px;
 
     %% ================= 電源系統 =================
-    subgraph Power [EV3 電源配置區]
-        BATT[6x AA 充電電池<br>NiMH 1.2V × 6 = 7.2V]
-        BATT -->|7.2V 供電| EV3_PWR[EV3 Brick 內部<br>穩壓電路]
-        EV3_PWR -->|穩壓供電| MOTOR_PWR[供電至：所有<br>EV3 馬達埠]
-        EV3_PWR -->|穩壓供電| SENSOR_PWR[供電至：所有<br>EV3 感測器埠]
-    end
+
 
     %% ================= 主控系統 =================
     subgraph Master [EV3 Brick 主控中心]
