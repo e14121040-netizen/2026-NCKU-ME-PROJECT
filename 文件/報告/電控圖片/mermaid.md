@@ -41,7 +41,7 @@ graph TD
 
     %% ================= 子控板 3 =================
     subgraph Slave3 [ESP32-C3 #3：伺服馬達與夾爪子系統]
-        C3_3[ESP32-C3 #3<br>控制板] ==>|PWM 控制訊號| SRV_ALL[MG996R<br>伺服馬達 x3]
+        C3_3[ESP32-C3 #3<br>控制板] ==>|PWM 控制訊號| SRV_ALL[MG996R<br>伺服馬達 x4]
         LIMIT_3[r齒條兩端<br>限位開關] -.->|數位保護訊號| C3_3
     end
 

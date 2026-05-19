@@ -25,7 +25,7 @@
 | `01_MainController/` | ESP32 | **主控板**：BLE UART + ESP-NOW 指令分發（USB 插電腦供電） |
 | `02_LegController/` | ESP32-C3 #1 | **腿部**：BTS7960 ×2 驅動 JGB37-520 ×2（差速轉向） |
 | `03_TurntableZController/` | ESP32-C3 #2 | **大圓盤+z**：BTS7960 #3 驅動 XD-25GA 370 + BTS7960 #4 驅動 JGY370 + 限位開關 |
-| `04_ServoClawController/` | ESP32-C3 #3 | **Servo**：MG996R 360°(r齒條) + 180°(θ) + 180°(夾爪) + 限位開關 |
+| `04_ServoClawController/` | ESP32-C3 #3 | **Servo**：MG996R 360°(r齒條) + 180°(θ) + 180°(夾爪) + 180°(承物盒擋板) + 限位開關 |
 | `protocol.h` | — | 共用通訊協議（enum + struct 定義） |
 | `_test/` | — | 測試用程式（按鈕控制原型、Servo 測試、ESP32 基礎測試） |
 
@@ -81,6 +81,8 @@ arduino-cli compile --fqbn esp32:esp32:esp32c3 04_ServoClawController/
 | `k` | θ 旋轉（反） |
 | `o` | 夾爪張開 |
 | `p` | 夾爪閉合 |
+| `g` | 承物盒擋板打開 |
+| `n` | 承物盒擋板關閉 |
 | `h` | 歸位 |
 
 ### 全域指令
@@ -99,6 +101,8 @@ arduino-cli compile --fqbn esp32:esp32:esp32c3 04_ServoClawController/
 | `EXTEND` / `RETRACT` | r 齒條伸出/縮回 |
 | `OPEN` / `CLOSE` | 夾爪張開/閉合 |
 | `HOME` | 歸位 |
+| `GATEOPEN` / `GO` | 承物盒擋板打開 |
+| `GATECLOSE` / `GC` | 承物盒擋板關閉 |
 | `UP` / `DOWN` | z 升降 |
 | `TL` / `TR` | 大圓盤左/右轉 |
 

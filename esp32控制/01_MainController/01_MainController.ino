@@ -118,6 +118,8 @@ enum ServoClawCommand {
   CMD_CLAW_OPEN,       // 5 - 夾爪張開
   CMD_CLAW_CLOSE,      // 6 - 夾爪閉合
   CMD_SERVO_HOME,      // 7 - 歸位
+  CMD_GATE_OPEN,       // 8 - 承物盒擋板打開
+  CMD_GATE_CLOSE,      // 9 - 承物盒擋板關閉
 };
 
 typedef struct servo_claw_now_message {
@@ -315,6 +317,8 @@ void processSingleChar(char c) {
     case 'o': queueServoCommand(CMD_CLAW_OPEN, 0); notifyBle("CMD: Claw Open"); break;
     case 'p': queueServoCommand(CMD_CLAW_CLOSE, 0); notifyBle("CMD: Claw Close"); break;
     case 'h': queueServoCommand(CMD_SERVO_HOME, 0); notifyBle("CMD: Home"); break;
+    case 'g': queueServoCommand(CMD_GATE_OPEN, 0); notifyBle("CMD: Gate Open"); break;
+    case 'n': queueServoCommand(CMD_GATE_CLOSE, 0); notifyBle("CMD: Gate Close"); break;
 
     // ===== 全部停止 =====
     case '0':
@@ -402,6 +406,12 @@ void handleBleCommand(String commandText) {
   } else if (upperCmd == "HOME") {
     queueServoCommand(CMD_SERVO_HOME, 0);
     notifyBle("CMD: HOME");
+  } else if (upperCmd == "GATEOPEN" || upperCmd == "GO") {
+    queueServoCommand(CMD_GATE_OPEN, 0);
+    notifyBle("CMD: GATE OPEN");
+  } else if (upperCmd == "GATECLOSE" || upperCmd == "GC") {
+    queueServoCommand(CMD_GATE_CLOSE, 0);
+    notifyBle("CMD: GATE CLOSE");
   }
   // ----- 全部停止 -----
   else if (upperCmd == "STOP") {
@@ -573,6 +583,7 @@ void setup() {
   Serial.println("  Z:         u=up j=down");
   Serial.println("  Servo:     w=r_extend s=r_retract i=theta+ k=theta-");
   Serial.println("  Claw:      o=open p=close h=home");
+  Serial.println("  Gate:      g=open n=close");
   Serial.println("  All:       0=STOP ALL");
   Serial.println("  BLE:       FORWARD, BACKWARD, STOP, SPD:200");
   Serial.println("-------------------------");

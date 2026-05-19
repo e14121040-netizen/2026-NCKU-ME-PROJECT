@@ -18,7 +18,7 @@
  *  架構（2026/05/05 更新）：
  *    C3 #1 — 腿部步行（L298N #1, JGB37-520 ×2）
  *    C3 #2 — 大圓盤旋轉 + z 升降（L298N #2, XD-25GA 370 + JGY370）
- *    C3 #3 — Servo 控制（MG996R 360° r齒條 + MG996R 180° θ + MG996R 180° 夾爪開合）
+ *    C3 #3 — Servo 控制（MG996R 360° r齒條 + MG996R 180° θ + MG996R 180° 夾爪開合 + MG996R 180° 承物盒擋板）
  */
 
 #ifndef PROTOCOL_H
@@ -78,10 +78,11 @@ typedef struct turntable_z_now_message {
 } turntable_z_now_message;
 
 // =====================================================
-//  Servo / 夾爪指令（C3 #3 ServoClawController）
+//  Servo / 夾爪 / 擋板指令（C3 #3 ServoClawController）
 //  MG996R 360° → r 齒條伸縮
 //  MG996R 180° → θ 旋轉
 //  MG996R 180° → 夾爪開合
+//  MG996R 180° → 承物盒擋板
 // =====================================================
 enum ServoClawCommand {
   CMD_SERVO_STOP = 0,
@@ -91,7 +92,9 @@ enum ServoClawCommand {
   CMD_THETA_NEG,       // 4 - θ 旋轉（反方向）
   CMD_CLAW_OPEN,       // 5 - 夾爪張開
   CMD_CLAW_CLOSE,      // 6 - 夾爪閉合
-  CMD_SERVO_HOME,      // 7 - 歸位（r 縮回 + 夾爪張開）
+  CMD_SERVO_HOME,      // 7 - 歸位（r 縮回 + 夾爪張開 + 擋板關閉）
+  CMD_GATE_OPEN,       // 8 - 承物盒擋板打開
+  CMD_GATE_CLOSE,      // 9 - 承物盒擋板關閉
 };
 
 typedef struct servo_claw_now_message {

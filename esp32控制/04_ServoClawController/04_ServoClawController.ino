@@ -9,6 +9,7 @@
  *  - 控制 r 齒條伸縮（MG996R 360° 連續旋轉舵機）
  *  - 控制 θ 旋轉（MG996R 180° 標準伺服）
  *  - 控制夾爪開合（MG996R 180° 標準伺服）
+ *  - 控制承物盒擋板（MG996R 180° 標準伺服，旋轉門式）
  *  - 限位開關保護 r 齒條兩端行程
  *  - Serial Monitor 手動測試模式
  *
@@ -16,6 +17,7 @@
  *  - MG996R 360°（GPIO 0）：r 齒條伸縮，人眼判斷位置
  *  - MG996R 180°（GPIO 1）：θ 旋轉
  *  - MG996R 180°（GPIO 2）：夾爪開合
+ *  - MG996R 180°（GPIO 3）：承物盒擋板（旋轉門式）
  *
  *  指令協議（ESP-NOW 接收 / Serial 手動測試）：
  *    CMD_SERVO_STOP = 0  → 全部停止（360° 停轉，180° 保持）
@@ -25,12 +27,15 @@
  *    CMD_THETA_NEG  = 4  → θ 旋轉（反方向）
  *    CMD_CLAW_OPEN  = 5  → 夾爪張開
  *    CMD_CLAW_CLOSE = 6  → 夾爪閉合
- *    CMD_SERVO_HOME = 7  → 歸位（r 縮回 + 夾爪張開）
+ *    CMD_SERVO_HOME = 7  → 歸位（r 縮回 + 夾爪張開 + 擋板關閉）
+ *    CMD_GATE_OPEN  = 8  → 承物盒擋板打開
+ *    CMD_GATE_CLOSE = 9  → 承物盒擋板關閉
  *
  *  Serial 快捷鍵：
  *    'w' = r 伸出       's' = r 縮回
  *    'i' = θ 正轉       'k' = θ 反轉
  *    'o' = 夾爪張開      'p' = 夾爪閉合
+ *    'g' = 擋板打開      'n' = 擋板關閉
  *    'h' = 歸位          '0' = 全部停止
  *    '?' = 顯示狀態
  *
@@ -40,6 +45,7 @@
  *  GPIO 0 (PWM)  -> MG996R 360°（r 齒條伸縮）── 信號線
  *  GPIO 1 (PWM)  -> MG996R 180°（θ 旋轉）── 信號線
  *  GPIO 2 (PWM)  -> MG996R 180°（夾爪開合）── 信號線
+ *  GPIO 3 (PWM)  -> MG996R 180°（承物盒擋板）── 信號線
  *
  *  限位開關：
  *  GPIO 4  -> r 齒條伸出極限 (Limit Switch, 常開 NO, 接 GND)
@@ -68,6 +74,8 @@ enum ServoClawCommand {
   CMD_CLAW_OPEN,       // 5 - 夾爪張開
   CMD_CLAW_CLOSE,      // 6 - 夾爪閉合
   CMD_SERVO_HOME,      // 7 - 歸位
+  CMD_GATE_OPEN,       // 8 - 承物盒擋板打開
+  CMD_GATE_CLOSE,      // 9 - 承物盒擋板關閉
 };
 
 typedef struct servo_claw_now_message {
@@ -84,10 +92,12 @@ bool newDataReceived = false;
 const int servoR_Pin     = 0;   // MG996R 360° — r 齒條
 const int servoTheta_Pin = 1;   // MG996R 180° — θ 旋轉
 const int servoClaw_Pin  = 2;   // MG996R 180° — 夾爪開合
+const int servoGate_Pin  = 3;   // MG996R 180° — 承物盒擋板
 
 Servo servoR;       // 360° 連續旋轉
 Servo servoTheta;   // 180° 標準
 Servo servoClaw;    // 180° 標準
+Servo servoGate;    // 180° 標準（擋板）
 
 // =====================================================
 //  限位開關腳位
@@ -117,8 +127,13 @@ const int THETA_STEP    = 15;   // 每次旋轉步進角度
 const int CLAW_OPEN_ANGLE  = 180;  // 夾爪張開角度（需實測調整）
 const int CLAW_CLOSE_ANGLE = 0;    // 夾爪閉合角度（需實測調整）
 
+// --- 180° 標準伺服 (承物盒擋板) ---
+const int GATE_OPEN_ANGLE  = 90;   // 擋板打開角度（需實測調整）
+const int GATE_CLOSE_ANGLE = 0;    // 擋板關閉角度（需實測調整）
+
 int currentThetaAngle = THETA_CENTER;
 int currentClawAngle  = CLAW_OPEN_ANGLE;
+int currentGateAngle  = GATE_CLOSE_ANGLE;
 
 // =====================================================
 //  r 齒條運行狀態（用於限位開關檢測）
@@ -224,6 +239,26 @@ void clawClose() {
 }
 
 // =====================================================
+//  承物盒擋板控制（180° 標準伺服，旋轉門式）
+// =====================================================
+
+void gateOpen() {
+  currentGateAngle = GATE_OPEN_ANGLE;
+  servoGate.write(currentGateAngle);
+  Serial.print("Gate OPEN -> ");
+  Serial.print(currentGateAngle);
+  Serial.println("°");
+}
+
+void gateClose() {
+  currentGateAngle = GATE_CLOSE_ANGLE;
+  servoGate.write(currentGateAngle);
+  Serial.print("Gate CLOSE -> ");
+  Serial.print(currentGateAngle);
+  Serial.println("°");
+}
+
+// =====================================================
 //  歸位功能
 // =====================================================
 void startHome() {
@@ -233,6 +268,7 @@ void startHome() {
   currentThetaAngle = THETA_CENTER;
   servoTheta.write(currentThetaAngle);
   Serial.println("Theta -> CENTER");
+  gateClose();    // 擋板關閉
   Serial.println("=== HOME DONE ===");
 }
 
@@ -298,6 +334,12 @@ void executeCommand(uint8_t cmd, uint8_t spd) {
     case CMD_SERVO_HOME:
       startHome();
       break;
+    case CMD_GATE_OPEN:
+      gateOpen();
+      break;
+    case CMD_GATE_CLOSE:
+      gateClose();
+      break;
     default:
       Serial.print("Unknown CMD: ");
       Serial.println(cmd);
@@ -325,11 +367,13 @@ void setup() {
   servoR.attach(servoR_Pin);
   servoTheta.attach(servoTheta_Pin);
   servoClaw.attach(servoClaw_Pin);
+  servoGate.attach(servoGate_Pin);
 
   // ----- 初始位置 -----
   rStop();                        // 360° 停轉
   servoTheta.write(THETA_CENTER); // θ 居中
   clawOpen();                     // 夾爪張開
+  gateClose();                    // 擋板關閉
 
   // ----- ESP-NOW 初始化 -----
   WiFi.mode(WIFI_STA);
@@ -349,6 +393,7 @@ void setup() {
   Serial.println("  w = r Extend    s = r Retract");
   Serial.println("  i = Theta (+)   k = Theta (-)");
   Serial.println("  o = Claw Open   p = Claw Close");
+  Serial.println("  g = Gate Open   n = Gate Close");
   Serial.println("  h = Home        0 = ALL STOP");
   Serial.println("  ? = Show status");
   Serial.println("----------------------------");
@@ -356,6 +401,8 @@ void setup() {
   Serial.println(currentThetaAngle);
   Serial.print("Claw angle: ");
   Serial.println(currentClawAngle);
+  Serial.print("Gate angle: ");
+  Serial.println(currentGateAngle);
   Serial.println();
 }
 
@@ -396,6 +443,12 @@ void loop() {
       case 'p':
         executeCommand(CMD_CLAW_CLOSE, 0);
         break;
+      case 'g':
+        executeCommand(CMD_GATE_OPEN, 0);
+        break;
+      case 'n':
+        executeCommand(CMD_GATE_CLOSE, 0);
+        break;
       case 'h':
         executeCommand(CMD_SERVO_HOME, 0);
         break;
@@ -413,6 +466,9 @@ void loop() {
         Serial.println("°");
         Serial.print("  Claw angle: ");
         Serial.print(currentClawAngle);
+        Serial.println("°");
+        Serial.print("  Gate angle: ");
+        Serial.print(currentGateAngle);
         Serial.println("°");
         Serial.print("  Limit R_Ext: ");
         Serial.println(digitalRead(limitR_Extend) == LOW ? "TRIGGERED" : "OK");
