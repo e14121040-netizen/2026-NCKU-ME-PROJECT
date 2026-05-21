@@ -8,19 +8,19 @@
  *  - 透過 ESP-NOW 接收主控板（ESP32）腿部指令
  *  - 控制左右兩顆 JGB37-520 直流減速馬達（差速轉向）
  *  - 使用 BTS7960 (IBT-2) ×2 驅動馬達（MOSFET H-Bridge）
- *  - Serial Monitor 手動測試模式
+ *  - 僅支援原地旋轉轉向（不使用差速轉向，避免重心不穩）
  *
  *  指令協議（ESP-NOW 接收 / Serial 手動測試）：
  *    CMD_LEG_STOP    = 0  → 停止
  *    CMD_FORWARD     = 1  → 前進（左右正轉）
  *    CMD_BACKWARD    = 2  → 後退（左右反轉）
- *    CMD_LEFT        = 3  → 左轉（左慢右快）
- *    CMD_RIGHT       = 4  → 右轉（左快右慢）
- *    CMD_SPIN_LEFT   = 5  → 左旋（左反右正）
- *    CMD_SPIN_RIGHT  = 6  → 右旋（左正右反）
+ *    CMD_SPIN_LEFT   = 3  → 原地左旋（左反右正）
+ *    CMD_SPIN_RIGHT  = 4  → 原地右旋（左正右反）
+ *
+ *  ⚠ 差速轉向（CMD_LEFT/CMD_RIGHT）已移除，避免重心不穩。
  *
  *  Serial 快捷鍵：
- *    'f'=前進 'b'=後退 'l'=左轉 'r'=右轉
+ *    'f'=前進 'b'=後退 'l'=左旋 'r'=右旋
  *    'q'=左旋 'e'=右旋 '0'=停止
  *    '+'=加速 '-'=減速 '?'=狀態
  *
@@ -53,12 +53,10 @@
 // =====================================================
 enum LegCommand {
   CMD_LEG_STOP = 0,
-  CMD_FORWARD,
-  CMD_BACKWARD,
-  CMD_LEFT,
-  CMD_RIGHT,
-  CMD_SPIN_LEFT,
-  CMD_SPIN_RIGHT,
+  CMD_FORWARD,       // 1
+  CMD_BACKWARD,      // 2
+  CMD_SPIN_LEFT,     // 3 - 原地左旋（左反右正）
+  CMD_SPIN_RIGHT,    // 4 - 原地右旋（左正右反）
 };
 
 typedef struct leg_now_message {
@@ -98,7 +96,6 @@ int dutyCycle = 200;              // 預設速度
 const int SPEED_MIN  = 80;
 const int SPEED_MAX  = 255;
 const int SPEED_STEP = 20;
-const int TURN_RATIO = 60;       // 轉向時慢側速度百分比
 
 // =====================================================
 //  ESP-NOW 回調：接收到資料時觸發
@@ -151,22 +148,6 @@ void backward(int spd) {
   Serial.print("Backward, speed="); Serial.println(spd);
 }
 
-void turnLeft(int spd) {
-  int slowSpeed = spd * TURN_RATIO / 100;
-  setMotor(motorL_RPWM, motorL_LPWM, slowSpeed);   // 左慢
-  setMotor(motorR_RPWM, motorR_LPWM, spd);          // 右快
-  Serial.print("Left Turn, L="); Serial.print(slowSpeed);
-  Serial.print(", R="); Serial.println(spd);
-}
-
-void turnRight(int spd) {
-  int slowSpeed = spd * TURN_RATIO / 100;
-  setMotor(motorL_RPWM, motorL_LPWM, spd);          // 左快
-  setMotor(motorR_RPWM, motorR_LPWM, slowSpeed);    // 右慢
-  Serial.print("Right Turn, L="); Serial.print(spd);
-  Serial.print(", R="); Serial.println(slowSpeed);
-}
-
 void spinLeft(int spd) {
   // 左反轉、右正轉 → 原地左旋
   setMotor(motorL_RPWM, motorL_LPWM, -spd);
@@ -193,8 +174,6 @@ void executeCommand(uint8_t cmd, uint8_t spd) {
     case CMD_LEG_STOP:   stopMotors(); break;
     case CMD_FORWARD:    forward(dutyCycle); break;
     case CMD_BACKWARD:   backward(dutyCycle); break;
-    case CMD_LEFT:       turnLeft(dutyCycle); break;
-    case CMD_RIGHT:      turnRight(dutyCycle); break;
     case CMD_SPIN_LEFT:  spinLeft(dutyCycle); break;
     case CMD_SPIN_RIGHT: spinRight(dutyCycle); break;
     default:
@@ -241,7 +220,7 @@ void setup() {
   Serial.println();
   Serial.println("--- Serial Test Commands ---");
   Serial.println("  f=Forward  b=Backward");
-  Serial.println("  l=Left     r=Right");
+  Serial.println("  l=SpinL    r=SpinR");
   Serial.println("  q=SpinL    e=SpinR");
   Serial.println("  0=STOP     +=SpeedUP  -=SpeedDOWN");
   Serial.println("  ?=Status");
@@ -267,8 +246,8 @@ void loop() {
     switch (c) {
       case 'f': executeCommand(CMD_FORWARD, 0); break;
       case 'b': executeCommand(CMD_BACKWARD, 0); break;
-      case 'l': executeCommand(CMD_LEFT, 0); break;
-      case 'r': executeCommand(CMD_RIGHT, 0); break;
+      case 'l': executeCommand(CMD_SPIN_LEFT, 0); break;
+      case 'r': executeCommand(CMD_SPIN_RIGHT, 0); break;
       case 'q': executeCommand(CMD_SPIN_LEFT, 0); break;
       case 'e': executeCommand(CMD_SPIN_RIGHT, 0); break;
       case '0': executeCommand(CMD_LEG_STOP, 0); break;

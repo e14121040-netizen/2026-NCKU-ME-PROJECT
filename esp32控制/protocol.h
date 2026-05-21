@@ -36,16 +36,16 @@ const uint8_t SPEED_MAX  = 255;
 
 // =====================================================
 //  腿部指令（C3 #1 LegController）
-//  L298N #1 → JGB37-520 ×2 差速轉向
+//  BTS7960 ×2 → JGB37-520 ×2 原地旋轉轉向
+//  ⚠ 不使用差速轉向（CMD_LEFT/CMD_RIGHT 已移除），
+//     僅使用原地旋轉以避免重心不穩。
 // =====================================================
 enum LegCommand {
   CMD_LEG_STOP = 0,
   CMD_FORWARD,       // 1 - 前進
   CMD_BACKWARD,      // 2 - 後退
-  CMD_LEFT,          // 3 - 左轉
-  CMD_RIGHT,         // 4 - 右轉
-  CMD_SPIN_LEFT,     // 5 - 左旋
-  CMD_SPIN_RIGHT,    // 6 - 右旋
+  CMD_SPIN_LEFT,     // 3 - 原地左旋（左反右正）
+  CMD_SPIN_RIGHT,    // 4 - 原地右旋（左正右反）
 };
 
 typedef struct leg_now_message {

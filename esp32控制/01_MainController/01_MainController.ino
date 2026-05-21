@@ -21,16 +21,18 @@
  *  │       └── C3 #3 (Servo)    → MG996R ×3               │
  *  └──────────────────────────────────────────────────────┘
  *
+ *  ⚠ 轉向設計：僅使用原地旋轉（左旋/右旋），不使用差速轉向，
+ *     以避免八足機器人重心不穩。
+ *
  *  BLE 指令格式：
  *  字串指令（大寫）：
  *    "F" / "FORWARD"  = 前進     "B" / "BACKWARD" = 後退
- *    "L" / "LEFT"     = 左轉     "R" / "RIGHT"    = 右轉
- *    "QL" / "SPINL"   = 左旋     "ER" / "SPINR"   = 右旋
+ *    "L" / "LEFT"     = 原地左旋  "R" / "RIGHT"    = 原地右旋
  *    "S" / "STOP"     = 全部停止
  *    "SPD:xxx"        = 設定速度 (0~255)
  *
  *  單字元指令（與 BluetoothSerial 版相容）：
- *    腿部: f/b/l/r/q/e/F/B/L/R
+ *    腿部: f/b/l/r/q/e/F/B/L/R  (l/r/q/e 皆為原地旋轉)
  *    大圓盤+z: a/d/u/j
  *    Servo/夾爪: w/s/i/k/o/p/h
  *    停止: 0
@@ -75,12 +77,10 @@ static const char *CHARACTERISTIC_UUID_TX = "6E400003-B5A3-F393-E0A9-E50E24DCCA9
 // 腿部指令
 enum LegCommand {
   CMD_LEG_STOP = 0,
-  CMD_FORWARD,
-  CMD_BACKWARD,
-  CMD_LEFT,
-  CMD_RIGHT,
-  CMD_SPIN_LEFT,
-  CMD_SPIN_RIGHT,
+  CMD_FORWARD,       // 1
+  CMD_BACKWARD,      // 2
+  CMD_SPIN_LEFT,     // 3 - 原地左旋
+  CMD_SPIN_RIGHT,    // 4 - 原地右旋
 };
 
 typedef struct leg_now_message {
@@ -216,7 +216,7 @@ void sendPendingCommands() {
     leg_now_message msg = {legCommand, legSpeed};
     esp_err_t result = esp_now_send(Leg_Address, (uint8_t *)&msg, sizeof(msg));
     if (result == ESP_OK) {
-      notifyBle("-> Leg CMD:" + String(legCommand) + " SPD:" + String(legSpeed));
+      notifyBle("-> Leg CMD:" + String(legCommand));
     } else {
       notifyBle("!! Leg send err:" + String(result));
     }
@@ -227,7 +227,7 @@ void sendPendingCommands() {
     turntable_z_now_message msg = {tzCommand, tzSpeed};
     esp_err_t result = esp_now_send(turntableZ_Address, (uint8_t *)&msg, sizeof(msg));
     if (result == ESP_OK) {
-      notifyBle("-> TZ CMD:" + String(tzCommand) + " SPD:" + String(tzSpeed));
+      notifyBle("-> TZ CMD:" + String(tzCommand));
     } else {
       notifyBle("!! TZ send err:" + String(result));
     }
@@ -238,7 +238,7 @@ void sendPendingCommands() {
     servo_claw_now_message msg = {servoCommand, servoSpeed};
     esp_err_t result = esp_now_send(servoClaw_Address, (uint8_t *)&msg, sizeof(msg));
     if (result == ESP_OK) {
-      notifyBle("-> Servo CMD:" + String(servoCommand) + " SPD:" + String(servoSpeed));
+      notifyBle("-> Servo CMD:" + String(servoCommand));
     } else {
       notifyBle("!! Servo send err:" + String(result));
     }
@@ -276,9 +276,7 @@ void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, in
     if (memcmp(info->src_addr, Leg_Address, 6) == 0 && len == sizeof(leg_ack_message)) {
       leg_ack_message ack;
       memcpy(&ack, incomingData, sizeof(ack));
-      notifyBle("Leg ACK cmd=" + String(ack.command) +
-                ", spd=" + String(ack.speed) +
-                ", status=" + String(ack.status));
+      notifyBle("Leg ACK cmd=" + String(ack.command));
     } else {
       Serial.print("ACK from unknown peer, len=");
       Serial.println(len);
@@ -294,14 +292,14 @@ void processSingleChar(char c) {
     // ===== 腿部指令 → C3 #1 =====
     case 'f': queueLegCommand(CMD_FORWARD, FULL_SPEED); notifyBle("CMD: Forward"); break;
     case 'b': queueLegCommand(CMD_BACKWARD, FULL_SPEED); notifyBle("CMD: Backward"); break;
-    case 'l': queueLegCommand(CMD_LEFT, FULL_SPEED); notifyBle("CMD: Left"); break;
-    case 'r': queueLegCommand(CMD_RIGHT, FULL_SPEED); notifyBle("CMD: Right"); break;
+    case 'l': queueLegCommand(CMD_SPIN_LEFT, FULL_SPEED); notifyBle("CMD: SpinLeft"); break;
+    case 'r': queueLegCommand(CMD_SPIN_RIGHT, FULL_SPEED); notifyBle("CMD: SpinRight"); break;
     case 'q': queueLegCommand(CMD_SPIN_LEFT, FULL_SPEED); notifyBle("CMD: SpinLeft"); break;
     case 'e': queueLegCommand(CMD_SPIN_RIGHT, FULL_SPEED); notifyBle("CMD: SpinRight"); break;
     case 'F': queueLegCommand(CMD_FORWARD, HALF_SPEED); notifyBle("CMD: Forward(half)"); break;
     case 'B': queueLegCommand(CMD_BACKWARD, HALF_SPEED); notifyBle("CMD: Backward(half)"); break;
-    case 'L': queueLegCommand(CMD_LEFT, HALF_SPEED); notifyBle("CMD: Left(half)"); break;
-    case 'R': queueLegCommand(CMD_RIGHT, HALF_SPEED); notifyBle("CMD: Right(half)"); break;
+    case 'L': queueLegCommand(CMD_SPIN_LEFT, HALF_SPEED); notifyBle("CMD: SpinLeft(half)"); break;
+    case 'R': queueLegCommand(CMD_SPIN_RIGHT, HALF_SPEED); notifyBle("CMD: SpinRight(half)"); break;
 
     // ===== 大圓盤 + z → C3 #2 =====
     case 'a': queueTZCommand(CMD_TURNTABLE_LEFT, FULL_SPEED); notifyBle("CMD: Turntable Left"); break;
@@ -364,11 +362,11 @@ void handleBleCommand(String commandText) {
     queueLegCommand(CMD_BACKWARD, FULL_SPEED);
     notifyBle("CMD: BACKWARD");
   } else if (upperCmd == "LEFT") {
-    queueLegCommand(CMD_LEFT, FULL_SPEED);
-    notifyBle("CMD: LEFT");
+    queueLegCommand(CMD_SPIN_LEFT, FULL_SPEED);
+    notifyBle("CMD: SPIN LEFT");
   } else if (upperCmd == "RIGHT") {
-    queueLegCommand(CMD_RIGHT, FULL_SPEED);
-    notifyBle("CMD: RIGHT");
+    queueLegCommand(CMD_SPIN_RIGHT, FULL_SPEED);
+    notifyBle("CMD: SPIN RIGHT");
   } else if (upperCmd == "QL" || upperCmd == "SPINL") {
     queueLegCommand(CMD_SPIN_LEFT, FULL_SPEED);
     notifyBle("CMD: SPIN LEFT");
@@ -578,14 +576,14 @@ void setup() {
 
   Serial.println();
   Serial.println("--- Command Reference ---");
-  Serial.println("  Leg:       f/b/l/r/q/e (full)  F/B/L/R (half)");
+  Serial.println("  Leg:       f/b (full)  F/B (half)  l/r/q/e=spin");
   Serial.println("  Turntable: a=left d=right");
   Serial.println("  Z:         u=up j=down");
   Serial.println("  Servo:     w=r_extend s=r_retract i=theta+ k=theta-");
   Serial.println("  Claw:      o=open p=close h=home");
   Serial.println("  Gate:      g=open n=close");
   Serial.println("  All:       0=STOP ALL");
-  Serial.println("  BLE:       FORWARD, BACKWARD, STOP, SPD:200");
+  Serial.println("  BLE:       FORWARD, BACKWARD, LEFT, RIGHT, STOP, SPD:200");
   Serial.println("-------------------------");
 }
 

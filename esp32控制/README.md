@@ -23,7 +23,7 @@
 |------|--------|------|
 | `00_macaddress/` | 任意 ESP32/C3 | 工具：印出 MAC 地址（設定 ESP-NOW 時使用） |
 | `01_MainController/` | ESP32 | **主控板**：BLE UART + ESP-NOW 指令分發（USB 插電腦供電） |
-| `02_LegController/` | ESP32-C3 #1 | **腿部**：BTS7960 ×2 驅動 JGB37-520 ×2（差速轉向） |
+| `02_LegController/` | ESP32-C3 #1 | **腿部**：BTS7960 ×2 驅動 JGB37-520 ×2（原地旋轉轉向） |
 | `03_TurntableZController/` | ESP32-C3 #2 | **大圓盤+z**：BTS7960 #3 驅動 XD-25GA 370 + BTS7960 #4 驅動 JGY370 + 限位開關 |
 | `04_ServoClawController/` | ESP32-C3 #3 | **Servo**：MG996R 360°(r齒條) + 180°(θ) + 180°(夾爪) + 180°(承物盒擋板) + 限位開關 |
 | `protocol.h` | — | 共用通訊協議（enum + struct 定義） |
@@ -58,9 +58,11 @@ arduino-cli compile --fqbn esp32:esp32:esp32c3 04_ServoClawController/
 |------|------|------|------|
 | `f` | 前進 | `F` | 半速前進 |
 | `b` | 後退 | `B` | 半速後退 |
-| `l` | 左轉 | `L` | 半速左轉 |
-| `r` | 右轉 | `R` | 半速右轉 |
-| `q` | 左旋 | `e` | 右旋 |
+| `l` | 原地左旋 | `L` | 半速左旋 |
+| `r` | 原地右旋 | `R` | 半速右旋 |
+| `q` | 原地左旋 | `e` | 原地右旋 |
+
+> ⚠ `l`/`r` 與 `q`/`e` 功能相同（皆為原地旋轉），不使用差速轉向以避免重心不穩。
 
 ### 大圓盤 + z 指令（→ C3 #2）
 
@@ -95,7 +97,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32c3 04_ServoClawController/
 
 | 指令 | 功能 |
 |------|------|
-| `FORWARD` / `BACKWARD` / `LEFT` / `RIGHT` | 腿部控制 |
+| `FORWARD` / `BACKWARD` / `LEFT` / `RIGHT` | 腿部控制（LEFT/RIGHT = 原地旋轉） |
 | `STOP` | 全部停止 |
 | `SPD:xxx` | 設定速度 (0~255) |
 | `EXTEND` / `RETRACT` | r 齒條伸出/縮回 |
@@ -206,8 +208,8 @@ arduino-cli monitor -p /dev/cu.usbmodem* --config baudrate=115200
 | 1 | `f` | 兩馬達正轉（前進），Serial 顯示 `Forward, speed=200` |
 | 2 | `0` | 兩馬達停止，Serial 顯示 `=== STOP ===` |
 | 3 | `b` | 兩馬達反轉（後退） |
-| 4 | `l` | 左馬達慢、右馬達快（左轉） |
-| 5 | `r` | 左馬達快、右馬達慢（右轉） |
+| 4 | `l` | 左反右正（原地左旋） |
+| 5 | `r` | 左正右反（原地右旋） |
 | 6 | `q` | 左反右正（原地左旋） |
 | 7 | `+` | 速度增加 20，Serial 顯示 `Speed UP -> 220` |
 | 8 | `-` | 速度減少 20 |
