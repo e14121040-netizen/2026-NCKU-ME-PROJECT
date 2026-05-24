@@ -18,8 +18,8 @@
 
  馬達配置：
  - Port A：輸送帶馬達（中馬達，驅動頂部水平輸送帶）
- - Port B：左輪馬達（大馬達）
  - Port C：右輪馬達（大馬達）
+ - Port D：左輪馬達（大馬達）
 """
 
 from pybricks.hubs import EV3Brick
@@ -42,8 +42,9 @@ AXLE_TRACK = 120  # mm（左右輪距）
 KP = 0.6  # 比例增益（擺動大→降低，跟線不緊→提高）
 KI = 0.0  # 積分增益（先設0，穩定後再微調）
 KD = 0.3  # 微分增益（抑制震盪）
+PID_OUTPUT_SCALE = -2  # PID 輸出縮放倍率
 BASE_SPEED = 120  # 基礎行駛速度 (mm/s)（速度慢更容易調參）
-SPEED_DROP_RATE = 1.5  # 偏差越大時的降速倍率，讓轉彎修正更穩定
+TURN_SLOWDOWN_RATE = 1.5  # 轉彎時的降速倍率，偏差越大時速度降低，讓轉彎修正更穩定
 MIN_SPEED = 20  # 降速後允許的最低前進速度，避免車子慢到停住
 MIN_SPEED_MARGIN = 7  # 保留的前進速度餘量，避免轉向修正吃掉太多前進能力
 
@@ -150,6 +151,8 @@ pid = PIDController(KP, KI, KD)
 # =====================================================
 #  輔助函式
 # =====================================================
+
+
 def show_status(*lines: str):
     """
     在 EV3 螢幕顯示狀態（含電量）。
@@ -192,37 +195,37 @@ def safe_stop(message="Stopped"):
     show_status(message)
 
 
-def wait_button_press(confirmed: Button = Button.CENTER, reject: Button | None = None):
+def wait_button_press(accept: Button = Button.CENTER, cancel: Button | None = None):
     """等待指定的按鈕被按下。
 
     Args:
-        confirmed: 按下該按鈕時返回 True。
-        reject: 按下該按鈕時返回 False（可為 None 表示忽略）。
+        accept: 按下該按鈕時返回 True。
+        cancel: 按下該按鈕時返回 False（可為 None 表示忽略）。
 
     Returns:
-        bool: 按下 confirmed 時回 True；若設定 reject 且按下時回 False。
+        bool: 按下 accept 時回 True；若設定 cancel 且按下時回 False。
     """
     while True:
         pressed = ev3.buttons.pressed()
-        if confirmed in pressed:
+        if accept in pressed:
             wait(300)  # debounce
             return True
-        if reject is not None and reject in pressed:
+        if cancel is not None and cancel in pressed:
             return False
         wait(50)
 
 
-def wait_touch_press(confirmed: TouchSensor):
+def wait_touch_press(accept: TouchSensor):
     """等待指定的按鈕被按下。
 
     Args:
-        confirmed: 按下該按鈕時返回 True。
+        accept: 按下該按鈕時返回 True。
 
     Returns:
-        bool: 按下 confirmed 時回 True
+        bool: 按下 accept 時回 True
     """
     while True:
-        if confirmed.pressed():
+        if accept.pressed():
             wait(300)  # debounce
             return True
         wait(50)
@@ -311,9 +314,9 @@ def read_line_position():
     """
     讀取感測器的反射值，計算與目標閾值的誤差。
 
-    使用左側邊緣循跡策略：
-    - 當感測器在白色區域（reflection > threshold）時，誤差為正，表示需要右轉修正
-    - 當感測器在黑色線上（reflection < threshold）時，誤差為負，表示需要左轉修正
+    使用右側邊緣循跡策略：
+    - 當感測器在白色區域（reflection > threshold）時，誤差為負，表示需要左轉修正
+    - 當感測器在黑色線上（reflection < threshold）時，誤差為正，表示需要右轉修正
 
     Returns:
         tuple: (error, reflection_value)
@@ -357,7 +360,7 @@ def check_stop_color():
             return None
 
         dist_red = get_color_manhattan(rgb, RGB_REF_RED)
-        dist_yellow = get_color_manhattan(rgb, RGB_REF_RED)
+        dist_yellow = get_color_manhattan(rgb, RGB_REF_YELLOW)
 
         if dist_red <= dist_yellow and dist_red <= COLOR_DIST_THRESHOLD:
             return Color.RED
@@ -386,8 +389,8 @@ def follow_line():
         color: Color.YELLOW, Color.RED, 或 None
     """
     error, ref_val = read_line_position()
-    correction = pid.compute(error) * -2
-    current_speed = max(MIN_SPEED, BASE_SPEED - int(abs(error) * SPEED_DROP_RATE))
+    correction = pid.compute(error) * PID_OUTPUT_SCALE
+    current_speed = max(MIN_SPEED, BASE_SPEED - int(abs(error) * TURN_SLOWDOWN_RATE))
 
     # 防止卡死
     if correction > 0:
@@ -408,7 +411,7 @@ def follow_line():
 def place_parts():
     """
     啟動頂部輸送帶，將帶面上所有零件推落至放置區平台。
-    馬達以 CONVEYOR_SPEED 正轉 CONVEYOR_RUN_TIME 毫秒後停止。
+    馬達以 PLACE_SPEED 正轉 PLACE_ANGLE 度，等待 PLACE_WAIT 秒後再轉回來。
     """
     ev3.speaker.beep(frequency=800, duration=200)
 
@@ -481,11 +484,13 @@ def main():
             if yellow_count >= 1:  # 連續 1 次才確認為黃線
                 zones_visited_all += 1
                 zones_visited_current += 1
-                # 到達放置區
-                wait(300)
 
+                # 第 X 輪 -> 停在第 X 個放置區
                 if zones_visited_current != round_finish + 1:
                     continue
+
+                # 到達放置區
+                wait(300)
 
                 zones_placed_all += 1
 
@@ -501,7 +506,7 @@ def main():
                 # 前進跨越黃線，避免下次循跡立刻再偵測到黃色
                 robot.straight(10)
                 wait(300)
-                break
+                continue
         else:
             yellow_count = 0  # 非黃色則重置計數器
 
@@ -509,6 +514,7 @@ def main():
                 # 回到起點
                 robot.stop()
 
+                # 已放置到四個放置區，結束程式
                 if zones_placed_all == 4:
                     break
 
@@ -529,7 +535,7 @@ def main():
                 # 前進跨越紅線，避免下次循跡立刻再偵測到紅色
                 robot.straight(10)
                 wait(300)
-                break
+                continue
 
         # Timeout 保護：循跡過久表示可能脱軌
         if segment_timer.time() > LINE_FOLLOW_TIMEOUT:
