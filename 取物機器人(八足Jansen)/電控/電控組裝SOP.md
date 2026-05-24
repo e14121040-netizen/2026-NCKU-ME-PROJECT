@@ -340,14 +340,16 @@ C3 #3 GPIO 5 → r 齒條縮回極限 NO → GND
 ### Step 11：BLE 藍芽測試
 
 **操作**：
-1. 手機安裝 BLE UART App（如 nRF Connect 或自製 App）
+1. 手機安裝 **BLE Controller – Arduino ESP32**
 2. 搜尋藍芽裝置 `ESP32_MainController`
-3. 連線後發送指令測試
-4. 確認斷線時自動急停
+3. 建立自訂按鈕頁，至少放入 `FORWARD`、`LEGSTOP`、`TL`、`TZSTOP`、`EXTEND`、`SERVOSTOP`、`STOP`
+4. 逐一測試分路停止與全域急停
+5. 確認斷線時自動急停
 
 **驗證**：
 - [ ] BLE 連線穩定
 - [ ] 手機發送指令，三路子控板正確回應
+- [ ] `LEGSTOP` / `TZSTOP` / `SERVOSTOP` 只停止對應子系統
 - [ ] BLE 斷線後所有馬達自動停止
 
 ---

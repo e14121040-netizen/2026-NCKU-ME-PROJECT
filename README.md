@@ -150,8 +150,9 @@ gantt
 │   ├── README.md                          ← 子系統總覽
 │   ├── BOM.md                             ← 零件清單與預算
 │   ├── app_inventor/
-│   │   ├── App指令對照表.md                ← 遥控指令對照
-│   │   └── AppInventor開發指南.md          ← App 開發教學
+│   │   ├── App指令對照表.md                ← BLE Controller 指令對照
+│   │   ├── BLE_Controller控制指南.md       ← 正式手機控制流程
+│   │   └── AppInventor開發指南.md          ← 歷史 / 備用參考
 │   ├── 電控/
 │   │   ├── 接線圖.md                      ← 完整接線參考（含線材規格）
 │   │   ├── 電源預算.md                    ← 電流計算、電池續航、線材規格
@@ -186,7 +187,7 @@ gantt
 | 工具 | 用途 |
 |------|------|
 | [Arduino IDE](https://www.arduino.cc/en/software) 或 [PlatformIO](https://platformio.org/) | 取物機器人 ESP32 程式開發 |
-| ESP32 遙控 App | 遙控 App |
+| BLE Controller – Arduino ESP32 | 取物機器人正式手機控制端 |
 | [EV3 MicroPython](https://pybricks.com/ev3-micropython/) | 運輸機器人程式開發 |
 | SolidWorks / Fusion 360 | 機構 3D 建模 |
 
@@ -215,9 +216,9 @@ gantt
 - [ ] XL4015 + LM2596 雙降壓模組接線測試
 
 ### 階段 3：取物機器人 — 遥控 App
-- [ ] ESP32 藍芽遥控 App 完成
-- [ ] 步行按鈕（按住/放開）測試通過
-- [ ] 手臂按鈕測試通過
+- [ ] BLE Controller – Arduino ESP32 配置完成
+- [ ] 步行命令與 `LEGSTOP` 測試通過
+- [ ] Turntable/Z 與 Servo 命令、分路停止測試通過
 - [ ] App 安裝到手機
 
 ### 階段 4：取物機器人 — 手臂整合

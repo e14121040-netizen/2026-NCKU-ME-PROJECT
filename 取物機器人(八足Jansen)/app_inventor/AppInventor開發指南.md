@@ -1,159 +1,58 @@
-# 遙控 App — 開發指南
+# App Inventor 開發指南（歷史 / 備用）
 
-> 本組使用 **ESP32 內建藍芽** 連線遙控 App。  
-> 可選用 App Inventor（自建 App）或現成的 Bluetooth Controller / BLE UART App。  
-> 指令字元對照請見 → [App指令對照表.md](App指令對照表.md)
+> **目前正式控制流程不是 App Inventor。**  
+> 本專案現行手機控制端為 **BLE Controller – Arduino ESP32**，請先閱讀 [BLE_Controller控制指南.md](BLE_Controller控制指南.md)。  
+> 本文件保留給需要研究舊 `.aia`、參考 UI 佈局、或未來想自行開發備用控制 App 的成員。
 
-## 方式一：修改學長的 App（推薦新手）
+## 目前定位
 
-### 步驟
+- 正式比賽 / 測試流程：使用 **BLE Controller – Arduino ESP32**
+- App Inventor：歷史參考、備用方案、研究學長介面配置用
+- 指令規格來源： [App指令對照表.md](App指令對照表.md)
 
-1. 開啟 [App Inventor](https://appinventor.mit.edu/)，登入 Google 帳號
-2. 選擇 **Projects → Import project (.aia) from my computer**
-3. 匯入學長的 `.aia` 檔案：
-   - `歷屆學長資料(2021屆)/底盤及吸氣馬達操作app.aia`（底盤控制）
-   - `歷屆學長資料(2021屆)/手臂及伺服馬達操作app.aia`（手臂控制）
-4. 開啟學長的 App 截圖，了解原始介面佈局
-5. 修改按鈕的發送字元，使其符合 [App指令對照表.md](App指令對照表.md)
-6. 合併為一個 App（步行 + 手臂 + z/夾爪在同一畫面）
+## 可參考的舊資產
 
-### 需要修改的重點
-- Baud Rate：ESP32 藍芽使用 **115200**
-- 步行指令字元：`f/b/l/r/q/e/0`（大寫 `F/B/L/R` = 半速，l/r/q/e 皆為原地旋轉）
-- 手臂 r/θ 指令：`w`(伸出) / `s`(縮回) / `a`(左轉) / `d`(右轉)
-- z/夾爪指令：`u`(z↑) / `j`(z↓) / `o`(爪開) / `p`(爪合) / `t`(蓋板開) / `y`(蓋板關) / `h`(歸位)
+學長資料位於：
 
----
+- `歷屆學長資料(2021屆)/底盤及吸氣馬達操作app.aia`
+- `歷屆學長資料(2021屆)/手臂及伺服馬達操作app.aia`
 
-## 方式二：從零建立 App
+這些檔案可以拿來看：
 
-### 第一步：建立新專案
+- 控制畫面如何分區
+- 按鈕大小與排列方式
+- 基本藍牙元件如何接線
 
-1. App Inventor → **Start new project** → 命名為 `PickupRobotController`
-2. Screen 設定：
-   - **ScreenOrientation** = Landscape（橫式）
-   - **Title** = `取物機器人遙控`
+## 若未來要自製備用 App，請遵守的現行規格
 
-### 第二步：加入藍芽元件
+1. BLE 裝置名稱固定為 `ESP32_MainController`
+2. 正式命令以文字命令為主：
+   - 腿部：`FORWARD` / `BACKWARD` / `LEFT` / `RIGHT` / `LEGSTOP`
+   - 大圓盤與 z：`TL` / `TR` / `UP` / `DOWN` / `TZSTOP`
+   - Servo / 夾爪：`EXTEND` / `RETRACT` / `OPEN` / `CLOSE` / `HOME` / `GATEOPEN` / `GATECLOSE` / `SERVOSTOP`
+   - 全域急停：`STOP`
+3. 備用 App 也必須沿用正式裝置名稱 `ESP32_MainController`。
+4. 不要再把「鬆手就送 `0`」當成主要停止策略。
+   現行架構使用：
+   - `LEGSTOP`
+   - `TZSTOP`
+   - `SERVOSTOP`
+   - `STOP`
 
-從 **Palette** 拖入：
-- `BluetoothClient`（Non-visible，連線用）
-- `ListPicker`（按鈕，用來選擇藍芽裝置）
-- `Button`（斷開連線用）
+## 為什麼不再推薦 App Inventor 作為主流程
 
-### 第三步：建立三區域控制按鈕
+- 現場實際使用的是 **BLE Controller – Arduino ESP32**
+- App Inventor 舊流程多半建立在早期單字元命令心智模型上，和目前 BLE 主控行為不完全一致
+- 分路停止現在已經是正式控制邏輯，舊的按鍵釋放事件教學容易把停止語義教錯
 
-建議佈局（使用 `HorizontalArrangement` 和 `VerticalArrangement`）：
+## 仍然值得保留的用途
 
-```
-┌────────────────────────────────────────────────────────┐
-│ [連線藍芽 ListPicker]                    [斷開 Button] │
-│                                                        │
-│   步行控制              手臂 r/θ        z/夾爪控制     │
-│       [▲ btn_fwd]      [伸出 btn_ext]  [z↑ btn_zu]   │
-│   [◀] [⬜ btn_stop] [▶] [左 btn_al][右 btn_ar]       │
-│       [▼ btn_bwd]      [縮回 btn_ret]  [z↓ btn_zd]   │
-│                                                        │
-│   [↺ btn_sl] [↻ btn_sr]               [爪開][爪合]    │
-│                                        [蓋板開][蓋板關] │
-│   [ 慢速模式 Switch ]                  [歸位 btn_home] │
-└────────────────────────────────────────────────────────┘
-```
+- 作為未來自製專用 App 的 UI 草圖參考
+- 研究學長做法與按鈕區域分配
+- 若 BLE Controller 不夠用，可作為備援開發起點
 
-每個按鈕設定：
-- **Width** = 最少 80px（建議更大，方便比賽時操作）
-- **FontSize** = 20 以上
-- **BackgroundColor** = 依功能分色（步行=藍、手臂=綠、夾爪=橘）
+## 建議閱讀順序
 
-### 第四步：設計 Blocks
-
-#### 藍芽連線
-
-```
-When ListPicker1.BeforePicking:
-    Set ListPicker1.Elements to BluetoothClient1.AddressesAndNames
-
-When ListPicker1.AfterPicking:
-    Call BluetoothClient1.Connect(address = ListPicker1.Selection)
-    If BluetoothClient1.IsConnected:
-        Set Label_status.Text to "已連線"
-```
-
-#### 步行按鈕（按住/放開邏輯）
-
-```
-When btn_fwd.TouchDown:
-    If BluetoothClient1.IsConnected:
-        Call BluetoothClient1.SendText(text = "f")
-
-When btn_fwd.TouchUp:
-    If BluetoothClient1.IsConnected:
-        Call BluetoothClient1.SendText(text = "0")
-```
-
-> **關鍵**：步行按鈕用 `TouchDown`（按住）+ `TouchUp`（放開停止），  
-> 這樣放開手指機器人就會停下來，避免失控。
-
-#### 手臂 r/θ 按鈕（按住/放開邏輯，DC 馬達持續動作）
-
-```
-When btn_ext.TouchDown:
-    If BluetoothClient1.IsConnected:
-        Call BluetoothClient1.SendText(text = "w")
-
-When btn_ext.TouchUp:
-    If BluetoothClient1.IsConnected:
-        Call BluetoothClient1.SendText(text = "0")
-```
-
-> **注意**：手臂使用 DC 馬達（非伺服），需要和步行一樣用按住/放開控制。
-
-#### 夾爪/蓋板按鈕（單擊邏輯，伺服馬達一次到位）
-
-```
-When btn_claw_open.Click:
-    If BluetoothClient1.IsConnected:
-        Call BluetoothClient1.SendText(text = "o")
-```
-
-#### 慢速模式切換
-
-```
-// 用一個全域變數 isSlow 控制
-When Switch_speed.Changed:
-    If Switch_speed.On:
-        Set global isSlow to true
-    Else:
-        Set global isSlow to false
-
-// 前進按鈕修改為：
-When btn_fwd.TouchDown:
-    If global isSlow:
-        Call BluetoothClient1.SendText(text = "F")  // 大寫 = 慢速
-    Else:
-        Call BluetoothClient1.SendText(text = "f")  // 小寫 = 全速
-```
-
-### 第五步：測試
-
-1. App Inventor → **Connect → AI Companion**（掃 QR Code 到手機測試）
-2. 手機藍芽先配對 `PickupRobot`（BluetoothSerial 版）
-3. App 中點「連線藍芽」→ 選擇 `PickupRobot`
-4. 逐一測試所有按鈕，確認三個子控板都有回應
-
-### 第六步：匯出安裝
-
-- **Build → App (provide QR code for .apk)** → 手機掃碼安裝
-
----
-
-## 常見問題
-
-| 問題 | 解決方法 |
-|------|----------|
-| 找不到藍芽裝置 | 先在手機設定中配對 ESP32（裝置名 `PickupRobot`） |
-| 連線後馬達不動 | 確認 ESP-NOW 已初始化、子控板 MAC 地址正確 |
-| 按鈕太小不好按 | 加大按鈕的 Width/Height，至少 80×80 |
-| iOS 無法使用 App Inventor BT | 改用 BLE 版主控板 + BLE UART App（如 nRF Connect） |
-| 偶爾斷線 | 檢查電池電壓、避免離太遠（> 10m） |
-
+1. [BLE_Controller控制指南.md](BLE_Controller控制指南.md)
+2. [App指令對照表.md](App指令對照表.md)
+3. `歷屆學長資料(2021屆)/` 內的 `.aia` 與截圖

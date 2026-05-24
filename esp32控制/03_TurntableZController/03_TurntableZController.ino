@@ -58,30 +58,9 @@
 #include <esp_now.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
+#include "../protocol.h"
 
 const uint8_t ESPNOW_CHANNEL = 1;
-
-// =====================================================
-//  ESP-NOW 資料格式（與 protocol.h 一致）
-// =====================================================
-enum TurntableZCommand {
-  CMD_TZ_STOP = 0,
-  CMD_TURNTABLE_LEFT,   // 1 - 大圓盤左轉
-  CMD_TURNTABLE_RIGHT,  // 2 - 大圓盤右轉
-  CMD_Z_UP,             // 3 - z 上升
-  CMD_Z_DOWN,           // 4 - z 下降
-};
-
-typedef struct turntable_z_now_message {
-  uint8_t command;
-  uint8_t speed;
-} turntable_z_now_message;
-
-typedef struct ack_message {
-  uint8_t command;
-  uint8_t speed;
-  uint8_t status;
-} ack_message;
 
 turntable_z_now_message incomingMsg;
 bool newDataReceived = false;
@@ -199,9 +178,10 @@ void sendAck() {
   }
 
   ack_message ack = {
+    CTRL_TURNTABLE_Z,
     incomingMsg.command,
     incomingMsg.speed,
-    1
+    ACK_STATUS_OK
   };
 
   esp_err_t result = esp_now_send(lastSenderMac, (uint8_t *)&ack, sizeof(ack));

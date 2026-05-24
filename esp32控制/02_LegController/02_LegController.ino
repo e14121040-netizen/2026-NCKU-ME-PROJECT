@@ -47,22 +47,7 @@
 
 #include <esp_now.h>
 #include <WiFi.h>
-
-// =====================================================
-//  ESP-NOW 資料格式（與主控板 MainController 一致）
-// =====================================================
-enum LegCommand {
-  CMD_LEG_STOP = 0,
-  CMD_FORWARD,       // 1
-  CMD_BACKWARD,      // 2
-  CMD_SPIN_LEFT,     // 3 - 原地左旋（左反右正）
-  CMD_SPIN_RIGHT,    // 4 - 原地右旋（左正右反）
-};
-
-typedef struct leg_now_message {
-  uint8_t command;
-  uint8_t speed;
-} leg_now_message;
+#include "../protocol.h"
 
 leg_now_message incomingMsg;
 bool newDataReceived = false;

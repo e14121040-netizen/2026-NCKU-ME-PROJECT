@@ -1,24 +1,16 @@
 /*
  * =====================================================
- *  2026 NCKU 機械專題實作 — ESP-NOW 通訊協議定義
- *  共用標頭檔 (protocol.h)
+ *  2026 NCKU 機械專題實作 — ESP-NOW / BLE 共用協議
+ *  單一來源標頭檔 (protocol.h)
  * =====================================================
  *
- *  本檔案定義所有 ESP-NOW 通訊的指令列舉、資料結構與常數。
- *  主控板與所有子控板共用，確保通訊協議一致。
+ *  本檔案定義：
+ *  - 各子控板的指令 enum
+ *  - ESP-NOW message / ACK struct
+ *  - 主控板與手機控制端共用的速度與停止別名
  *
  *  使用方式：
- *    在各 .ino 檔案中加入 #include "../protocol.h"
- *
- *  注意：
- *    Arduino IDE 的 include 路徑從 sketch 目錄開始，
- *    因此使用 "../protocol.h" 可正確指向 esp32控制/ 根目錄。
- *    若 IDE 版本不支援，請將此檔案複製到各 sketch 目錄中。
- *
- *  架構（2026/05/05 更新）：
- *    C3 #1 — 腿部步行（L298N #1, JGB37-520 ×2）
- *    C3 #2 — 大圓盤旋轉 + z 升降（L298N #2, XD-25GA 370 + JGY370）
- *    C3 #3 — Servo 控制（MG996R 360° r齒條 + MG996R 180° θ + MG996R 180° 夾爪開合 + MG996R 180° 承物盒擋板）
+ *    在各 sketch 中加入 #include "../protocol.h"
  */
 
 #ifndef PROTOCOL_H
@@ -31,14 +23,32 @@
 // =====================================================
 const uint8_t FULL_SPEED = 200;
 const uint8_t HALF_SPEED = 120;
-const uint8_t SPEED_MIN  = 80;
-const uint8_t SPEED_MAX  = 255;
+const uint8_t SPEED_MIN = 80;
+const uint8_t SPEED_MAX = 255;
+
+// =====================================================
+//  手機 / Serial 分路停止別名
+//  - '0' 仍保留給主控板全域急停
+//  - '1' / '2' / '3' 供主控板本機 Serial 測試
+// =====================================================
+const char CMD_LEG_STOP_ONLY = '1';
+const char CMD_TZ_STOP_ONLY = '2';
+const char CMD_SERVO_STOP_ONLY = '3';
+
+// =====================================================
+//  控制板識別碼（ACK / log 使用）
+// =====================================================
+enum ControllerId {
+  CTRL_UNKNOWN = 0,
+  CTRL_LEG = 1,
+  CTRL_TURNTABLE_Z = 2,
+  CTRL_SERVO = 3,
+};
+
+const uint8_t ACK_STATUS_OK = 1;
 
 // =====================================================
 //  腿部指令（C3 #1 LegController）
-//  BTS7960 ×2 → JGB37-520 ×2 原地旋轉轉向
-//  ⚠ 不使用差速轉向（CMD_LEFT/CMD_RIGHT 已移除），
-//     僅使用原地旋轉以避免重心不穩。
 // =====================================================
 enum LegCommand {
   CMD_LEG_STOP = 0,
@@ -53,16 +63,8 @@ typedef struct leg_now_message {
   uint8_t speed;
 } leg_now_message;
 
-typedef struct leg_ack_message {
-  uint8_t command;
-  uint8_t speed;
-  uint8_t status;
-} leg_ack_message;
-
 // =====================================================
 //  大圓盤 + z 升降指令（C3 #2 TurntableZController）
-//  L298N #2 Ch.A → XD-25GA 370 大圓盤旋轉
-//  L298N #2 Ch.B → JGY370 z 升降（蝸桿自鎖）
 // =====================================================
 enum TurntableZCommand {
   CMD_TZ_STOP = 0,
@@ -79,10 +81,6 @@ typedef struct turntable_z_now_message {
 
 // =====================================================
 //  Servo / 夾爪 / 擋板指令（C3 #3 ServoClawController）
-//  MG996R 360° → r 齒條伸縮
-//  MG996R 180° → θ 旋轉
-//  MG996R 180° → 夾爪開合
-//  MG996R 180° → 承物盒擋板
 // =====================================================
 enum ServoClawCommand {
   CMD_SERVO_STOP = 0,
@@ -99,7 +97,17 @@ enum ServoClawCommand {
 
 typedef struct servo_claw_now_message {
   uint8_t command;
-  uint8_t speed;     // 360° Servo: 速度控制, 180° Servo: 目標角度
+  uint8_t speed;  // 360° Servo: 保留欄位, 180° Servo: 保留欄位
 } servo_claw_now_message;
 
-#endif // PROTOCOL_H
+// =====================================================
+//  共用 ACK 格式
+// =====================================================
+typedef struct ack_message {
+  uint8_t controller_id;
+  uint8_t command;
+  uint8_t speed;
+  uint8_t status;
+} ack_message;
+
+#endif  // PROTOCOL_H

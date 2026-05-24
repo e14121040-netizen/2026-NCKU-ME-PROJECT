@@ -5,158 +5,58 @@
  * =====================================================
  *
  *  功能：
- *  - 透過 BLE (低功耗藍芽) UART Service 接收手機遙控 App 指令
- *  - 透過 ESP-NOW 將指令分發給 3 塊 ESP32-C3 子控板
- *  - 支援指令字串和單字元兩種格式
- *  - 支援 ACK 回傳（從子控板接收確認）
- *  - 不直接驅動任何馬達
+ *  - 透過 BLE UART 接收手機端指令
+ *  - 透過 ESP-NOW 分發到 3 塊 ESP32-C3 子控板
+ *  - 支援全域急停與分路停止
+ *  - 解析共用 ACK 格式（目前 C3 #2 有回 ACK）
  *
- *  分散式架構（2026/05/05 更新）：
- *  ┌──────────────────────────────────────────────────────┐
- *  │  ESP32 主控板 (BLE, USB 插電腦供電)                    │
- *  │  ├── BLE UART Service 接收                           │
- *  │  └── ESP-NOW 分發至：                                 │
- *  │       ├── C3 #1 (腿部)     → BTS7960 ×2, JGB37-520 ×2 │
- *  │       ├── C3 #2 (大圓盤+z) → BTS7960 #3+#4          │
- *  │       └── C3 #3 (Servo)    → MG996R ×3               │
- *  └──────────────────────────────────────────────────────┘
- *
- *  ⚠ 轉向設計：僅使用原地旋轉（左旋/右旋），不使用差速轉向，
- *     以避免八足機器人重心不穩。
- *
- *  BLE 指令格式：
- *  字串指令（大寫）：
- *    "F" / "FORWARD"  = 前進     "B" / "BACKWARD" = 後退
- *    "L" / "LEFT"     = 原地左旋  "R" / "RIGHT"    = 原地右旋
- *    "S" / "STOP"     = 全部停止
- *    "SPD:xxx"        = 設定速度 (0~255)
- *
- *  單字元指令（與 BluetoothSerial 版相容）：
- *    腿部: f/b/l/r/q/e/F/B/L/R  (l/r/q/e 皆為原地旋轉)
- *    大圓盤+z: a/d/u/j
- *    Servo/夾爪: w/s/i/k/o/p/h
- *    停止: 0
- *
- *  BLE UART Service UUID:
- *    Service:  6E400001-B5A3-F393-E0A9-E50E24DCCA9E
- *    RX Char:  6E400002-B5A3-F393-E0A9-E50E24DCCA9E
- *    TX Char:  6E400003-B5A3-F393-E0A9-E50E24DCCA9E
+ *  正式手機控制端：
+ *    BLE Controller – Arduino ESP32
+ *    Device name: ESP32_MainController
  */
 
-#include <esp_now.h>
-#include <WiFi.h>
-#include <esp_wifi.h>
+#include <BLE2902.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
-#include <BLE2902.h>
+#include <WiFi.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
+#include <string.h>
+
+#include "../protocol.h"
 
 const uint8_t ESPNOW_CHANNEL = 1;
 
 // =====================================================
 //  子控板 MAC 地址
-//  ⚠ TODO: 將 0xFF 佔位符替換為實際 MAC 地址！
-//  取得方式：上傳 macaddress/macaddress.ino 至各 C3，
-//           開啟 Serial Monitor (115200) 記錄 MAC。
+//  ⚠ 將 0xFF 佔位符替換為實際 MAC 地址
 // =====================================================
-uint8_t Leg_Address[]        = {0x58, 0x8C, 0x81, 0x9D, 0xF6, 0x90};  // C3 #1 腿部
-uint8_t turntableZ_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #2 大圓盤+z  ⚠ TODO
-uint8_t servoClaw_Address[]  = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #3 Servo     ⚠ TODO
+uint8_t Leg_Address[] = {0x58, 0x8C, 0x81, 0x9D, 0xF6, 0x90};       // C3 #1 腿部
+uint8_t turntableZ_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #2 大圓盤+z
+uint8_t servoClaw_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};   // C3 #3 Servo
 
-// =====================================================
-//  BLE UART Service UUID
-// =====================================================
 static const char *BLE_DEVICE_NAME = "ESP32_MainController";
 static const char *SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
 static const char *CHARACTERISTIC_UUID_RX = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";
 static const char *CHARACTERISTIC_UUID_TX = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";
 
-// =====================================================
-//  ESP-NOW 資料格式 — 通用指令結構
-// =====================================================
-// 腿部指令
-enum LegCommand {
-  CMD_LEG_STOP = 0,
-  CMD_FORWARD,       // 1
-  CMD_BACKWARD,      // 2
-  CMD_SPIN_LEFT,     // 3 - 原地左旋
-  CMD_SPIN_RIGHT,    // 4 - 原地右旋
-};
-
-typedef struct leg_now_message {
-  uint8_t command;
-  uint8_t speed;
-} leg_now_message;
-
-typedef struct leg_ack_message {
-  uint8_t command;
-  uint8_t speed;
-  uint8_t status;
-} leg_ack_message;
-
-// 大圓盤 + z 升降指令（C3 #2）
-enum TurntableZCommand {
-  CMD_TZ_STOP = 0,
-  CMD_TURNTABLE_LEFT,   // 1 - 大圓盤左轉
-  CMD_TURNTABLE_RIGHT,  // 2 - 大圓盤右轉
-  CMD_Z_UP,             // 3 - z 上升
-  CMD_Z_DOWN,           // 4 - z 下降
-};
-
-typedef struct turntable_z_now_message {
-  uint8_t command;
-  uint8_t speed;
-} turntable_z_now_message;
-
-// Servo / 夾爪指令（C3 #3）
-enum ServoClawCommand {
-  CMD_SERVO_STOP = 0,
-  CMD_R_EXTEND,        // 1 - r 齒條伸出
-  CMD_R_RETRACT,       // 2 - r 齒條縮回
-  CMD_THETA_POS,       // 3 - θ 旋轉（正）
-  CMD_THETA_NEG,       // 4 - θ 旋轉（反）
-  CMD_CLAW_OPEN,       // 5 - 夾爪張開
-  CMD_CLAW_CLOSE,      // 6 - 夾爪閉合
-  CMD_SERVO_HOME,      // 7 - 歸位
-  CMD_GATE_OPEN,       // 8 - 承物盒擋板打開
-  CMD_GATE_CLOSE,      // 9 - 承物盒擋板關閉
-};
-
-typedef struct servo_claw_now_message {
-  uint8_t command;
-  uint8_t speed;
-} servo_claw_now_message;
-
-// =====================================================
-//  速度設定
-// =====================================================
-const uint8_t FULL_SPEED = 200;
-const uint8_t HALF_SPEED = 120;
-uint8_t currentSpeed = FULL_SPEED;  // BLE SPD 指令可動態調整
-
-// =====================================================
-//  BLE 相關變數
-// =====================================================
 BLECharacteristic *txCharacteristic = nullptr;
 bool bleClientConnected = false;
 bool lastBleClientConnected = false;
 
-// =====================================================
-//  指令佇列
-// =====================================================
-// 腿部指令佇列
+uint8_t currentSpeed = FULL_SPEED;
+
 uint8_t legCommand = CMD_LEG_STOP;
-uint8_t legSpeed = FULL_SPEED;
+uint8_t legSpeed = 0;
 bool legDirty = false;
 
-// 大圓盤+z 指令佇列
 uint8_t tzCommand = CMD_TZ_STOP;
-uint8_t tzSpeed = FULL_SPEED;
+uint8_t tzSpeed = 0;
 bool tzDirty = false;
 
-// Servo/夾爪指令佇列
 uint8_t servoCommand = CMD_SERVO_STOP;
-uint8_t servoSpeed = FULL_SPEED;
+uint8_t servoSpeed = 0;
 bool servoDirty = false;
 
 // =====================================================
@@ -179,6 +79,52 @@ void printMacAddress(const uint8_t *mac) {
   }
 }
 
+bool isPlaceholderMac(const uint8_t *mac) {
+  if (mac == nullptr) {
+    return true;
+  }
+
+  for (int i = 0; i < 6; ++i) {
+    if (mac[i] != 0xFF) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool isConfiguredMac(const uint8_t *mac) {
+  return mac != nullptr && !isPlaceholderMac(mac);
+}
+
+const char *controllerNameFromId(uint8_t controllerId) {
+  switch (controllerId) {
+    case CTRL_LEG:
+      return "Leg";
+    case CTRL_TURNTABLE_Z:
+      return "TurntableZ";
+    case CTRL_SERVO:
+      return "ServoClaw";
+    default:
+      return "Unknown";
+  }
+}
+
+const char *controllerNameFromMac(const uint8_t *mac) {
+  if (mac == nullptr) {
+    return "Unknown";
+  }
+  if (memcmp(mac, Leg_Address, 6) == 0) {
+    return "Leg";
+  }
+  if (memcmp(mac, turntableZ_Address, 6) == 0) {
+    return "TurntableZ";
+  }
+  if (memcmp(mac, servoClaw_Address, 6) == 0) {
+    return "ServoClaw";
+  }
+  return "Unknown";
+}
+
 void notifyBle(const String &message) {
   Serial.println(message);
   if (bleClientConnected && txCharacteristic != nullptr) {
@@ -187,9 +133,18 @@ void notifyBle(const String &message) {
   }
 }
 
-// =====================================================
-//  指令佇列操作
-// =====================================================
+uint8_t normalizeLegSpeed(uint8_t requestedSpeed) {
+  return (uint8_t)constrain(requestedSpeed, SPEED_MIN, SPEED_MAX);
+}
+
+uint8_t legFullSpeed() {
+  return normalizeLegSpeed(currentSpeed);
+}
+
+uint8_t legHalfSpeed() {
+  return normalizeLegSpeed((uint8_t)max((int)SPEED_MIN, (int)currentSpeed / 2));
+}
+
 void queueLegCommand(uint8_t cmd, uint8_t spd) {
   legCommand = cmd;
   legSpeed = spd;
@@ -208,39 +163,60 @@ void queueServoCommand(uint8_t cmd, uint8_t spd) {
   servoDirty = true;
 }
 
-// =====================================================
-//  指令發送（定時從佇列發送）
-// =====================================================
+void queueAllStop() {
+  queueLegCommand(CMD_LEG_STOP, 0);
+  queueTZCommand(CMD_TZ_STOP, 0);
+  queueServoCommand(CMD_SERVO_STOP, 0);
+}
+
+bool sendLegCommandNow() {
+  if (!isConfiguredMac(Leg_Address)) {
+    notifyBle("!! Leg peer MAC not configured");
+    return false;
+  }
+
+  leg_now_message msg = {legCommand, legSpeed};
+  return esp_now_send(Leg_Address, (uint8_t *)&msg, sizeof(msg)) == ESP_OK;
+}
+
+bool sendTZCommandNow() {
+  if (!isConfiguredMac(turntableZ_Address)) {
+    notifyBle("!! TurntableZ peer MAC not configured");
+    return false;
+  }
+
+  turntable_z_now_message msg = {tzCommand, tzSpeed};
+  return esp_now_send(turntableZ_Address, (uint8_t *)&msg, sizeof(msg)) == ESP_OK;
+}
+
+bool sendServoCommandNow() {
+  if (!isConfiguredMac(servoClaw_Address)) {
+    notifyBle("!! ServoClaw peer MAC not configured");
+    return false;
+  }
+
+  servo_claw_now_message msg = {servoCommand, servoSpeed};
+  return esp_now_send(servoClaw_Address, (uint8_t *)&msg, sizeof(msg)) == ESP_OK;
+}
+
 void sendPendingCommands() {
   if (legDirty) {
-    leg_now_message msg = {legCommand, legSpeed};
-    esp_err_t result = esp_now_send(Leg_Address, (uint8_t *)&msg, sizeof(msg));
-    if (result == ESP_OK) {
-      notifyBle("-> Leg CMD:" + String(legCommand));
-    } else {
-      notifyBle("!! Leg send err:" + String(result));
+    if (sendLegCommandNow()) {
+      notifyBle("-> Leg CMD:" + String(legCommand) + " SPD:" + String(legSpeed));
     }
     legDirty = false;
   }
 
   if (tzDirty) {
-    turntable_z_now_message msg = {tzCommand, tzSpeed};
-    esp_err_t result = esp_now_send(turntableZ_Address, (uint8_t *)&msg, sizeof(msg));
-    if (result == ESP_OK) {
-      notifyBle("-> TZ CMD:" + String(tzCommand));
-    } else {
-      notifyBle("!! TZ send err:" + String(result));
+    if (sendTZCommandNow()) {
+      notifyBle("-> TurntableZ CMD:" + String(tzCommand));
     }
     tzDirty = false;
   }
 
   if (servoDirty) {
-    servo_claw_now_message msg = {servoCommand, servoSpeed};
-    esp_err_t result = esp_now_send(servoClaw_Address, (uint8_t *)&msg, sizeof(msg));
-    if (result == ESP_OK) {
-      notifyBle("-> Servo CMD:" + String(servoCommand));
-    } else {
-      notifyBle("!! Servo send err:" + String(result));
+    if (sendServoCommandNow()) {
+      notifyBle("-> ServoClaw CMD:" + String(servoCommand));
     }
     servoDirty = false;
   }
@@ -251,78 +227,145 @@ void sendPendingCommands() {
 // =====================================================
 void OnDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
   const uint8_t *destination = info != nullptr ? info->des_addr : nullptr;
-
-  if (destination != nullptr && memcmp(destination, Leg_Address, 6) == 0) {
-    Serial.print("ESP-NOW -> Leg: ");
-  } else if (destination != nullptr && memcmp(destination, turntableZ_Address, 6) == 0) {
-    Serial.print("ESP-NOW -> TurntableZ: ");
-  } else if (destination != nullptr && memcmp(destination, servoClaw_Address, 6) == 0) {
-    Serial.print("ESP-NOW -> ServoClaw: ");
-  } else {
-    Serial.print("ESP-NOW -> Unknown: ");
-  }
+  Serial.print("ESP-NOW -> ");
+  Serial.print(controllerNameFromMac(destination));
+  Serial.print(": ");
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "OK" : "FAIL");
 }
 
 void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
-  if (incomingData == nullptr || len < 2) {
+  if (incomingData == nullptr || len != sizeof(ack_message)) {
     Serial.print("Unexpected ESP-NOW response, len=");
     Serial.println(len);
     return;
   }
 
-  // 嘗試解析為 ACK 回應
+  ack_message ack;
+  memcpy(&ack, incomingData, sizeof(ack));
+
+  const char *sourceName = controllerNameFromId(ack.controller_id);
   if (info != nullptr && info->src_addr != nullptr) {
-    if (memcmp(info->src_addr, Leg_Address, 6) == 0 && len == sizeof(leg_ack_message)) {
-      leg_ack_message ack;
-      memcpy(&ack, incomingData, sizeof(ack));
-      notifyBle("Leg ACK cmd=" + String(ack.command));
-    } else {
-      Serial.print("ACK from unknown peer, len=");
-      Serial.println(len);
+    const char *macName = controllerNameFromMac(info->src_addr);
+    if (strcmp(macName, "Unknown") != 0) {
+      sourceName = macName;
     }
   }
+
+  notifyBle(
+    String(sourceName) + " ACK cmd=" + String(ack.command) +
+    " spd=" + String(ack.speed) +
+    " status=" + String(ack.status)
+  );
 }
 
 // =====================================================
-//  處理單字元指令（與 BluetoothSerial 版相容）
+//  指令處理
 // =====================================================
 void processSingleChar(char c) {
   switch (c) {
-    // ===== 腿部指令 → C3 #1 =====
-    case 'f': queueLegCommand(CMD_FORWARD, FULL_SPEED); notifyBle("CMD: Forward"); break;
-    case 'b': queueLegCommand(CMD_BACKWARD, FULL_SPEED); notifyBle("CMD: Backward"); break;
-    case 'l': queueLegCommand(CMD_SPIN_LEFT, FULL_SPEED); notifyBle("CMD: SpinLeft"); break;
-    case 'r': queueLegCommand(CMD_SPIN_RIGHT, FULL_SPEED); notifyBle("CMD: SpinRight"); break;
-    case 'q': queueLegCommand(CMD_SPIN_LEFT, FULL_SPEED); notifyBle("CMD: SpinLeft"); break;
-    case 'e': queueLegCommand(CMD_SPIN_RIGHT, FULL_SPEED); notifyBle("CMD: SpinRight"); break;
-    case 'F': queueLegCommand(CMD_FORWARD, HALF_SPEED); notifyBle("CMD: Forward(half)"); break;
-    case 'B': queueLegCommand(CMD_BACKWARD, HALF_SPEED); notifyBle("CMD: Backward(half)"); break;
-    case 'L': queueLegCommand(CMD_SPIN_LEFT, HALF_SPEED); notifyBle("CMD: SpinLeft(half)"); break;
-    case 'R': queueLegCommand(CMD_SPIN_RIGHT, HALF_SPEED); notifyBle("CMD: SpinRight(half)"); break;
+    case 'f':
+      queueLegCommand(CMD_FORWARD, legFullSpeed());
+      notifyBle("CMD: Forward");
+      break;
+    case 'b':
+      queueLegCommand(CMD_BACKWARD, legFullSpeed());
+      notifyBle("CMD: Backward");
+      break;
+    case 'l':
+    case 'q':
+      queueLegCommand(CMD_SPIN_LEFT, legFullSpeed());
+      notifyBle("CMD: SpinLeft");
+      break;
+    case 'r':
+    case 'e':
+      queueLegCommand(CMD_SPIN_RIGHT, legFullSpeed());
+      notifyBle("CMD: SpinRight");
+      break;
+    case 'F':
+      queueLegCommand(CMD_FORWARD, legHalfSpeed());
+      notifyBle("CMD: Forward(half)");
+      break;
+    case 'B':
+      queueLegCommand(CMD_BACKWARD, legHalfSpeed());
+      notifyBle("CMD: Backward(half)");
+      break;
+    case 'L':
+      queueLegCommand(CMD_SPIN_LEFT, legHalfSpeed());
+      notifyBle("CMD: SpinLeft(half)");
+      break;
+    case 'R':
+      queueLegCommand(CMD_SPIN_RIGHT, legHalfSpeed());
+      notifyBle("CMD: SpinRight(half)");
+      break;
 
-    // ===== 大圓盤 + z → C3 #2 =====
-    case 'a': queueTZCommand(CMD_TURNTABLE_LEFT, FULL_SPEED); notifyBle("CMD: Turntable Left"); break;
-    case 'd': queueTZCommand(CMD_TURNTABLE_RIGHT, FULL_SPEED); notifyBle("CMD: Turntable Right"); break;
-    case 'u': queueTZCommand(CMD_Z_UP, FULL_SPEED); notifyBle("CMD: Z Up"); break;
-    case 'j': queueTZCommand(CMD_Z_DOWN, FULL_SPEED); notifyBle("CMD: Z Down"); break;
+    case 'a':
+      queueTZCommand(CMD_TURNTABLE_LEFT, FULL_SPEED);
+      notifyBle("CMD: Turntable Left");
+      break;
+    case 'd':
+      queueTZCommand(CMD_TURNTABLE_RIGHT, FULL_SPEED);
+      notifyBle("CMD: Turntable Right");
+      break;
+    case 'u':
+      queueTZCommand(CMD_Z_UP, FULL_SPEED);
+      notifyBle("CMD: Z Up");
+      break;
+    case 'j':
+      queueTZCommand(CMD_Z_DOWN, FULL_SPEED);
+      notifyBle("CMD: Z Down");
+      break;
 
-    // ===== Servo / 夾爪 → C3 #3 =====
-    case 'w': queueServoCommand(CMD_R_EXTEND, 0); notifyBle("CMD: r Extend"); break;
-    case 's': queueServoCommand(CMD_R_RETRACT, 0); notifyBle("CMD: r Retract"); break;
-    case 'i': queueServoCommand(CMD_THETA_POS, 0); notifyBle("CMD: Theta+"); break;
-    case 'k': queueServoCommand(CMD_THETA_NEG, 0); notifyBle("CMD: Theta-"); break;
-    case 'o': queueServoCommand(CMD_CLAW_OPEN, 0); notifyBle("CMD: Claw Open"); break;
-    case 'p': queueServoCommand(CMD_CLAW_CLOSE, 0); notifyBle("CMD: Claw Close"); break;
-    case 'h': queueServoCommand(CMD_SERVO_HOME, 0); notifyBle("CMD: Home"); break;
-    case 'g': queueServoCommand(CMD_GATE_OPEN, 0); notifyBle("CMD: Gate Open"); break;
-    case 'n': queueServoCommand(CMD_GATE_CLOSE, 0); notifyBle("CMD: Gate Close"); break;
+    case 'w':
+      queueServoCommand(CMD_R_EXTEND, 0);
+      notifyBle("CMD: r Extend");
+      break;
+    case 's':
+      queueServoCommand(CMD_R_RETRACT, 0);
+      notifyBle("CMD: r Retract");
+      break;
+    case 'i':
+      queueServoCommand(CMD_THETA_POS, 0);
+      notifyBle("CMD: Theta+");
+      break;
+    case 'k':
+      queueServoCommand(CMD_THETA_NEG, 0);
+      notifyBle("CMD: Theta-");
+      break;
+    case 'o':
+      queueServoCommand(CMD_CLAW_OPEN, 0);
+      notifyBle("CMD: Claw Open");
+      break;
+    case 'p':
+      queueServoCommand(CMD_CLAW_CLOSE, 0);
+      notifyBle("CMD: Claw Close");
+      break;
+    case 'g':
+      queueServoCommand(CMD_GATE_OPEN, 0);
+      notifyBle("CMD: Gate Open");
+      break;
+    case 'n':
+      queueServoCommand(CMD_GATE_CLOSE, 0);
+      notifyBle("CMD: Gate Close");
+      break;
+    case 'h':
+      queueServoCommand(CMD_SERVO_HOME, 0);
+      notifyBle("CMD: Home");
+      break;
 
-    // ===== 全部停止 =====
-    case '0':
+    case CMD_LEG_STOP_ONLY:
       queueLegCommand(CMD_LEG_STOP, 0);
+      notifyBle("CMD: LEG STOP");
+      break;
+    case CMD_TZ_STOP_ONLY:
       queueTZCommand(CMD_TZ_STOP, 0);
+      notifyBle("CMD: TZ STOP");
+      break;
+    case CMD_SERVO_STOP_ONLY:
       queueServoCommand(CMD_SERVO_STOP, 0);
+      notifyBle("CMD: SERVO STOP");
+      break;
+    case '0':
+      queueAllStop();
       notifyBle("CMD: ALL STOP");
       break;
 
@@ -334,48 +377,36 @@ void processSingleChar(char c) {
   }
 }
 
-// =====================================================
-//  處理 BLE 字串指令
-// =====================================================
 void handleBleCommand(String commandText) {
   commandText.trim();
-
   if (commandText.length() == 0) {
     return;
   }
 
-  // 單字元指令直接處理
   if (commandText.length() == 1) {
     processSingleChar(commandText.charAt(0));
     return;
   }
 
-  // 多字元字串指令（轉大寫比較）
   String upperCmd = commandText;
   upperCmd.toUpperCase();
 
-  // ----- 腿部字串指令 -----
   if (upperCmd == "FORWARD") {
-    queueLegCommand(CMD_FORWARD, FULL_SPEED);
+    queueLegCommand(CMD_FORWARD, legFullSpeed());
     notifyBle("CMD: FORWARD");
   } else if (upperCmd == "BACKWARD") {
-    queueLegCommand(CMD_BACKWARD, FULL_SPEED);
+    queueLegCommand(CMD_BACKWARD, legFullSpeed());
     notifyBle("CMD: BACKWARD");
-  } else if (upperCmd == "LEFT") {
-    queueLegCommand(CMD_SPIN_LEFT, FULL_SPEED);
+  } else if (upperCmd == "LEFT" || upperCmd == "QL" || upperCmd == "SPINL") {
+    queueLegCommand(CMD_SPIN_LEFT, legFullSpeed());
     notifyBle("CMD: SPIN LEFT");
-  } else if (upperCmd == "RIGHT") {
-    queueLegCommand(CMD_SPIN_RIGHT, FULL_SPEED);
+  } else if (upperCmd == "RIGHT" || upperCmd == "ER" || upperCmd == "SPINR") {
+    queueLegCommand(CMD_SPIN_RIGHT, legFullSpeed());
     notifyBle("CMD: SPIN RIGHT");
-  } else if (upperCmd == "QL" || upperCmd == "SPINL") {
-    queueLegCommand(CMD_SPIN_LEFT, FULL_SPEED);
-    notifyBle("CMD: SPIN LEFT");
-  } else if (upperCmd == "ER" || upperCmd == "SPINR") {
-    queueLegCommand(CMD_SPIN_RIGHT, FULL_SPEED);
-    notifyBle("CMD: SPIN RIGHT");
-  }
-  // ----- 大圓盤+z 字串指令 -----
-  else if (upperCmd == "TL" || upperCmd == "TURNTABLELEFT") {
+  } else if (upperCmd == "LEGSTOP") {
+    queueLegCommand(CMD_LEG_STOP, 0);
+    notifyBle("CMD: LEG STOP");
+  } else if (upperCmd == "TL" || upperCmd == "TURNTABLELEFT") {
     queueTZCommand(CMD_TURNTABLE_LEFT, FULL_SPEED);
     notifyBle("CMD: TURNTABLE LEFT");
   } else if (upperCmd == "TR" || upperCmd == "TURNTABLERIGHT") {
@@ -387,9 +418,10 @@ void handleBleCommand(String commandText) {
   } else if (upperCmd == "DOWN" || upperCmd == "ZD") {
     queueTZCommand(CMD_Z_DOWN, FULL_SPEED);
     notifyBle("CMD: Z DOWN");
-  }
-  // ----- Servo/夾爪字串指令 -----
-  else if (upperCmd == "EXTEND") {
+  } else if (upperCmd == "TZSTOP") {
+    queueTZCommand(CMD_TZ_STOP, 0);
+    notifyBle("CMD: TZ STOP");
+  } else if (upperCmd == "EXTEND") {
     queueServoCommand(CMD_R_EXTEND, 0);
     notifyBle("CMD: R EXTEND");
   } else if (upperCmd == "RETRACT") {
@@ -410,24 +442,18 @@ void handleBleCommand(String commandText) {
   } else if (upperCmd == "GATECLOSE" || upperCmd == "GC") {
     queueServoCommand(CMD_GATE_CLOSE, 0);
     notifyBle("CMD: GATE CLOSE");
-  }
-  // ----- 全部停止 -----
-  else if (upperCmd == "STOP") {
-    queueLegCommand(CMD_LEG_STOP, 0);
-    queueTZCommand(CMD_TZ_STOP, 0);
+  } else if (upperCmd == "SERVOSTOP") {
     queueServoCommand(CMD_SERVO_STOP, 0);
+    notifyBle("CMD: SERVO STOP");
+  } else if (upperCmd == "STOP" || upperCmd == "ALLSTOP") {
+    queueAllStop();
     notifyBle("CMD: ALL STOP");
-  }
-  // ----- 速度設定 -----
-  else if (upperCmd.startsWith("SPD:") || upperCmd.startsWith("SPEED:")) {
+  } else if (upperCmd.startsWith("SPD:") || upperCmd.startsWith("SPEED:")) {
     int separatorIndex = upperCmd.indexOf(':');
     int parsedSpeed = upperCmd.substring(separatorIndex + 1).toInt();
-    parsedSpeed = constrain(parsedSpeed, 0, 255);
-    currentSpeed = (uint8_t)parsedSpeed;
-    notifyBle("Speed set to " + String(currentSpeed));
-  }
-  // ----- 未知指令 -----
-  else {
+    currentSpeed = normalizeLegSpeed((uint8_t)constrain(parsedSpeed, 0, 255));
+    notifyBle("Speed set to " + String(currentSpeed) + " (leg default)");
+  } else {
     notifyBle("Unknown BLE cmd: " + commandText);
   }
 }
@@ -443,12 +469,9 @@ class ControllerServerCallbacks : public BLEServerCallbacks {
 
   void onDisconnect(BLEServer *server) override {
     bleClientConnected = false;
-    // 斷線時急停所有子控板
-    queueLegCommand(CMD_LEG_STOP, 0);
-    queueTZCommand(CMD_TZ_STOP, 0);
-    queueServoCommand(CMD_SERVO_STOP, 0);
+    queueAllStop();
     server->getAdvertising()->start();
-    Serial.println("BLE disconnected, advertising restarted, ALL STOP");
+    Serial.println("BLE disconnected, advertising restarted, ALL STOP queued");
   }
 };
 
@@ -466,6 +489,12 @@ class ControllerRxCallbacks : public BLECharacteristicCallbacks {
 //  ESP-NOW 初始化
 // =====================================================
 bool addPeer(uint8_t *addr, const char *name) {
+  if (!isConfiguredMac(addr)) {
+    Serial.print("Peer skipped (placeholder MAC): ");
+    Serial.println(name);
+    return false;
+  }
+
   esp_now_peer_info_t peerInfo = {};
   memcpy(peerInfo.peer_addr, addr, 6);
   peerInfo.channel = ESPNOW_CHANNEL;
@@ -477,6 +506,7 @@ bool addPeer(uint8_t *addr, const char *name) {
     Serial.println(name);
     return false;
   }
+
   Serial.print("Peer added: ");
   Serial.println(name);
   return true;
@@ -500,12 +530,11 @@ void setupEspNow() {
   esp_now_register_send_cb(OnDataSent);
   esp_now_register_recv_cb(OnDataRecv);
 
-  // 註冊 3 個子控板 Peer
   addPeer(Leg_Address, "C3#1 Leg");
   addPeer(turntableZ_Address, "C3#2 TurntableZ");
   addPeer(servoClaw_Address, "C3#3 ServoClaw");
 
-  Serial.println("ESP-NOW initialized with 3 peers");
+  Serial.println("ESP-NOW initialized");
 }
 
 // =====================================================
@@ -542,8 +571,16 @@ void setupBle() {
   Serial.println("Device name: " + String(BLE_DEVICE_NAME));
 }
 
+void printMacConfigWarning(const char *name, const uint8_t *mac) {
+  if (!isConfiguredMac(mac)) {
+    Serial.print("!! WARNING: ");
+    Serial.print(name);
+    Serial.println(" MAC is still placeholder FF:FF:FF:FF:FF:FF");
+  }
+}
+
 // =====================================================
-//  Setup
+//  Setup / Loop
 // =====================================================
 void setup() {
   Serial.begin(115200);
@@ -551,7 +588,7 @@ void setup() {
 
   Serial.println("========================================");
   Serial.println("  ESP32 MainController — BLE Version");
-  Serial.println("  BLE UART + ESP-NOW Dispatch (3 peers)");
+  Serial.println("  BLE Controller – Arduino ESP32");
   Serial.println("========================================");
 
   Serial.print("Main MAC: ");
@@ -566,51 +603,46 @@ void setup() {
   printMacAddress(servoClaw_Address);
   Serial.println();
 
+  printMacConfigWarning("TurntableZ", turntableZ_Address);
+  printMacConfigWarning("ServoClaw", servoClaw_Address);
+
   setupEspNow();
   setupBle();
-
-  // 初始化：全部停止
-  queueLegCommand(CMD_LEG_STOP, 0);
-  queueTZCommand(CMD_TZ_STOP, 0);
-  queueServoCommand(CMD_SERVO_STOP, 0);
+  queueAllStop();
 
   Serial.println();
   Serial.println("--- Command Reference ---");
-  Serial.println("  Leg:       f/b (full)  F/B (half)  l/r/q/e=spin");
-  Serial.println("  Turntable: a=left d=right");
-  Serial.println("  Z:         u=up j=down");
-  Serial.println("  Servo:     w=r_extend s=r_retract i=theta+ k=theta-");
-  Serial.println("  Claw:      o=open p=close h=home");
-  Serial.println("  Gate:      g=open n=close");
-  Serial.println("  All:       0=STOP ALL");
-  Serial.println("  BLE:       FORWARD, BACKWARD, LEFT, RIGHT, STOP, SPD:200");
+  Serial.println(" Leg move:   f/b/l/r/q/e  | half: F/B/L/R");
+  Serial.println(" Turntable:  a=left d=right  u=up j=down");
+  Serial.println(" Servo:      w/s/i/k/o/p/g/n/h");
+  Serial.println(" Split stop: 1=LEGSTOP 2=TZSTOP 3=SERVOSTOP");
+  Serial.println(" All stop:   0=STOP ALL");
+  Serial.println(" BLE text:   FORWARD BACKWARD LEFT RIGHT LEGSTOP");
+  Serial.println("             TL TR UP DOWN TZSTOP");
+  Serial.println("             EXTEND RETRACT OPEN CLOSE HOME");
+  Serial.println("             GATEOPEN GATECLOSE SERVOSTOP STOP");
+  Serial.println("             SPD:200");
   Serial.println("-------------------------");
 }
 
-// =====================================================
-//  Main Loop
-// =====================================================
 void loop() {
-  // ----- BLE 連線狀態追蹤 -----
   if (!bleClientConnected && lastBleClientConnected) {
-    notifyBle("BLE controller disconnected");
+    Serial.println("BLE controller disconnected");
   }
 
   if (bleClientConnected && !lastBleClientConnected) {
-    notifyBle("BLE controller ready");
+    Serial.println("BLE controller ready");
   }
 
   lastBleClientConnected = bleClientConnected;
 
-  // ----- Serial 手動測試（debug 用）-----
   if (Serial.available()) {
     char c = Serial.read();
     Serial.print("[Serial] ");
+    Serial.println(c);
     processSingleChar(c);
   }
 
-  // ----- 發送待處理指令 -----
   sendPendingCommands();
-
   delay(20);
 }

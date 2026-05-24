@@ -61,27 +61,7 @@
 #include <esp_now.h>
 #include <WiFi.h>
 #include <ESP32Servo.h>
-
-// =====================================================
-//  ESP-NOW 資料格式（與 protocol.h 一致）
-// =====================================================
-enum ServoClawCommand {
-  CMD_SERVO_STOP = 0,
-  CMD_R_EXTEND,        // 1 - r 齒條伸出（360° Servo 正轉）
-  CMD_R_RETRACT,       // 2 - r 齒條縮回（360° Servo 反轉）
-  CMD_THETA_POS,       // 3 - θ 旋轉（正方向）
-  CMD_THETA_NEG,       // 4 - θ 旋轉（反方向）
-  CMD_CLAW_OPEN,       // 5 - 夾爪張開
-  CMD_CLAW_CLOSE,      // 6 - 夾爪閉合
-  CMD_SERVO_HOME,      // 7 - 歸位
-  CMD_GATE_OPEN,       // 8 - 承物盒擋板打開
-  CMD_GATE_CLOSE,      // 9 - 承物盒擋板關閉
-};
-
-typedef struct servo_claw_now_message {
-  uint8_t command;
-  uint8_t speed;
-} servo_claw_now_message;
+#include "../protocol.h"
 
 servo_claw_now_message incomingMsg;
 bool newDataReceived = false;
