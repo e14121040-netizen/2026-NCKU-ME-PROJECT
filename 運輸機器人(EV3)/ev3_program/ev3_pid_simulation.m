@@ -5,10 +5,14 @@ clear; close all; clc;
 
 %% 參數設定
 KP = 0.6;
-KI = 0.1;
+KI = 0.0;
 KD = 0.3;
 
-BASE_SPEED = 100;      % mm/s
+PID_OUTPUT_SCALE = -2;
+BASE_SPEED = 120;      % mm/s
+TURN_SLOWDOWN_RATE = 1.5;
+MIN_SPEED = 20;
+MIN_SPEED_MARGIN = 7;
 LINE_THRESHOLD = 20;   % 0~100
 
 WHEEL_DIAMETER = 56;   % 輪子直徑mm
@@ -61,7 +65,7 @@ right_speed_history = zeros(1, N);
 %% 模擬循環
 for i = 1:N
     reflection = reflection_signal(i);
-    error = reflection - LINE_THRESHOLD;
+    error = LINE_THRESHOLD - reflection;
     error_history(i) = error;
 
     % 離散 PID
@@ -72,28 +76,39 @@ for i = 1:N
     last_error = error;
 
     correction = KP*error + KI*integral_term + KD*derivative;
+    correction = correction * PID_OUTPUT_SCALE;
+
+    current_speed = max(MIN_SPEED, BASE_SPEED - fix(abs(error) * TURN_SLOWDOWN_RATE));
+
+    % 轉向限幅，避免轉向吃掉太多前進能力
+    if correction > 0
+        correction = min(current_speed - MIN_SPEED_MARGIN, correction);
+    elseif correction < 0
+        correction = max(-(current_speed - MIN_SPEED_MARGIN), correction);
+    end
+
     correction_history(i) = correction;
 
-    % 假設 correction 對應到轉向率
-    turn_rate = 2 * correction;   % deg/s
+    % correction -> turn_rate
+    turn_rate = correction;   % deg/s
     turn_rate_history(i) = turn_rate;
 
     % 左右輪線速度
     omega = turn_rate * pi/180;   % rad/s
-    v_left  = BASE_SPEED - omega*(AXLE_TRACK/2);
-    v_right = BASE_SPEED + omega*(AXLE_TRACK/2);
+    v_left  = current_speed - omega*(AXLE_TRACK/2);
+    v_right = current_speed + omega*(AXLE_TRACK/2);
 
     left_speed_history(i) = v_left;
     right_speed_history(i) = v_right;
 end
 
-%% RPM 計算（要用 history，不是最後一筆）
+%% RPM 計算
 wheel_radius = WHEEL_DIAMETER/2/1000;   % m
 left_rpm  = (left_speed_history/1000)  ./ (2*pi*wheel_radius) * 60;
 right_rpm = (right_speed_history/1000) ./ (2*pi*wheel_radius) * 60;
 
 %% 繪圖
-figure('Name','EV3 PID 循跡控制模擬（修正版）','Position',[100 100 1200 800]);
+figure('Name','EV3 PID 循跡控制模擬','Position',[100 100 1200 800]);
 
 % ---- 圖1：感測器反射值 ----
 subplot(3,2,1);
@@ -122,9 +137,10 @@ subplot(3,2,5);
 plot(TIME, left_speed_history, 'LineWidth', 1.5); hold on;
 plot(TIME, right_speed_history, 'LineWidth', 1.5);
 plot(TIME, BASE_SPEED*ones(size(TIME)), '--', 'LineWidth', 1.2);
+plot(TIME, MIN_SPEED*ones(size(TIME)), ':', 'LineWidth', 1.2);
 xlabel('時間 (秒)'); ylabel('mm/s');
 title('左右輪速度');
-legend('左輪','右輪','基準速度'); grid on;
+legend('左輪','右輪','基準速度','最低速度'); grid on;
 
 subplot(3,2,6);
 plot(TIME, left_rpm, 'LineWidth', 1.5); hold on;
@@ -137,6 +153,8 @@ legend('左馬達','右馬達'); grid on;
 fprintf('=== EV3 PID 循跡控制模擬結果（修正版）===\n');
 fprintf('模擬時間: %.2f s\n', SIM_TIME);
 fprintf('PID: KP=%.3f, KI=%.3f, KD=%.3f\n', KP, KI, KD);
+fprintf('PID_OUTPUT_SCALE=%.2f, TURN_SLOWDOWN_RATE=%.2f\n', PID_OUTPUT_SCALE, TURN_SLOWDOWN_RATE);
+fprintf('BASE_SPEED=%.2f, MIN_SPEED=%.2f, MIN_SPEED_MARGIN=%.2f\n', BASE_SPEED, MIN_SPEED, MIN_SPEED_MARGIN);
 fprintf('平均絕對誤差: %.3f\n', mean(abs(error_history)));
 fprintf('最大絕對誤差: %.3f\n', max(abs(error_history)));
 fprintf('左馬達 RPM 範圍: %.2f ~ %.2f\n', min(left_rpm), max(left_rpm));
