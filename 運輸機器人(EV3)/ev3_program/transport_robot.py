@@ -34,44 +34,47 @@ from pybricks.robotics import DriveBase
 #
 
 # 底盤（DriveBase 簡化直線/轉向控制）
-# 參數需依實際輪子直徑和軸距調整
 WHEEL_DIAMETER = 56  # mm（EV3 大輪）
 AXLE_TRACK = 120  # mm（左右輪距）
 
 # PID 循跡參數
-KP = 0.6  # 比例增益（擺動大→降低，跟線不緊→提高）
-KI = 0.0  # 積分增益（先設0，穩定後再微調）
-KD = 0.3  # 微分增益（抑制震盪）
+KP = 0.6  # 比例增益：擺動大→降低，跟線不緊→提高
+KI = 0.0  # 積分增益：先設0，穩定後再微調
+KD = 0.3  # 微分增益：抑制震盪
 PID_OUTPUT_SCALE = -2  # PID 輸出縮放倍率
-BASE_SPEED = 120  # 基礎行駛速度 (mm/s)（速度慢更容易調參）
-TURN_SLOWDOWN_RATE = 1.5  # 轉彎時的降速倍率，偏差越大時速度降低，讓轉彎修正更穩定
-MIN_SPEED = 20  # 降速後允許的最低前進速度，避免車子慢到停住
-MIN_SPEED_MARGIN = 7  # 保留的前進速度餘量，避免轉向修正吃掉太多前進能力
+BASE_SPEED = 120  # 基礎行駛速度 (mm/s)
+TURN_SLOWDOWN_RATE = 1.5  # 轉彎時的降速倍率
+MIN_SPEED = 20  # 降速後允許的最低前進速度
+MIN_SPEED_MARGIN = 7  # 保留的前進速度餘量
 
 # 放置機構參數
 HAS_PLACE_MOTOR = True  # 是否已安裝放置機構
-PLACE_ANGLE = -75  # 放置機構旋轉角度
+PLACE_ANGLE = -45  # 放置機構旋轉角度
 PLACE_SPEED = 100  # 放置機構速度 (deg/s)
-PLACE_WAIT = 3000  # 放置後等待時間 (ms)
+PLACE_WAIT = 1500  # 放置後等待時間 (ms)
 
 # 安全參數
 BATTERY_CHECK_ENABLED = True  # 開啟電量檢查
 BATTERY_CHECK_INTERVAL = 10000  # 電量檢查間隔 (ms)
 BATTERY_CHECK_MIN_MV = 7000  # EV3 低電量警戒 (mV)
-LINE_FOLLOW_TIMEOUT = 60000  # 循跡逾時 (ms)，超過此時間沒偵測到停止線則停車
+LINE_FOLLOW_TIMEOUT = 60000  # 循跡逾時 (ms)
+YELLOW_REACTION_COOLDOWN = 2000  # 黃線去重時間 (ms)
 
 # 顏色校準參數
 # Manhattan: |dR|+|dG|+|dB|
 COLOR_DIST_THRESHOLD = 35  # RGB Manhattan 距離閾值
-COLOR_MIN_R = 15  # 最低 R 通道值（排除黑/白地面誤判）
+COLOR_MIN_R = 15  # 最低 R 通道值
 CALIBRATION_SAMPLES = 10  # 每次校準取樣次數
 
 # 循跡閾值常變數（由 calibrate_sensors() 自動計算）
-LINE_THRESHOLD = 50  # 反射值低於此為黑線
+LINE_THRESHOLD = 40  # 反射值低於此為黑線
+LINE_RECOVERY_MAX_ANGLE = 45  # 原地找線最大掃描角度
+LINE_RECOVERY_STEP_ANGLE = 5  # 原地找線每次旋轉角度
+LINE_RECOVERY_ERROR_TOLERANCE = 10  # 視為找回線的誤差容許值
 
 # 顏色感測常變數（由 calibrate_colors() 自動計算）
-RGB_REF_RED = (0, 0, 0)  # 紅線 RGB 參考值（校準後更新）
-RGB_REF_YELLOW = (0, 0, 0)  # 黃線 RGB 參考值（校準後更新）
+RGB_REF_RED = (54, 8, 0)  # 紅線 RGB 參考值
+RGB_REF_YELLOW = (77, 40, 4)  # 黃線 RGB 參考值
 COLORS_CALIBRATED = False  # 是否已完成顏色校準
 
 # =====================================================
@@ -216,7 +219,7 @@ def wait_button_press(accept: Button = Button.CENTER, cancel: Button | None = No
 
 
 def wait_touch_press(accept: TouchSensor):
-    """等待指定的按鈕被按下。
+    """等待指定的感測器被按下。
 
     Args:
         accept: 按下該按鈕時返回 True。
@@ -228,6 +231,27 @@ def wait_touch_press(accept: TouchSensor):
         if accept.pressed():
             wait(300)  # debounce
             return True
+        wait(50)
+
+
+def wait_button_or_touch_cancel(accept: Button, cancel: TouchSensor):
+    """等待指定按鈕或感測器被按下。（wait_button_press 的修改版本）
+
+    Args:
+        accept: 按下該按鈕時返回 True。
+        cancel: 按下該感測器時返回 False。
+
+    Returns:
+        bool: 按下 accept 時回 True；若設定 cancel 且按下時回 False。
+    """
+    while True:
+        pressed = ev3.buttons.pressed()
+        if accept in pressed:
+            wait(300)
+            return True
+        if cancel is not None and cancel.pressed():
+            wait(300)
+            return False
         wait(50)
 
 
@@ -380,14 +404,16 @@ def check_stop_color():
 def follow_line():
     """
     執行一步單感測器 PID 左緣循跡。
-    回傳偵測到的停止線顏色，沒有則回傳 None。
-    為了避免頻繁切換 reflection/color 導致卡頓，
-    只在 reflection 值極度偏離黑白典型值（例如遇到了黃色或紅色）
-    或定時檢測時才讀取 color。
+    若偵測到停止線，直接回傳顏色交由主程式處理，避免線條高反射率干擾了 PID。
 
     Returns:
-        color: Color.YELLOW, Color.RED, 或 None
+        color: 停止線顏色，可能為 Color.YELLOW, Color.RED, 或 None
     """
+    stop_color = check_stop_color()
+
+    if stop_color in (Color.YELLOW, Color.RED):
+        return stop_color
+
     error, ref_val = read_line_position()
     correction = pid.compute(error) * PID_OUTPUT_SCALE
     current_speed = max(MIN_SPEED, BASE_SPEED - int(abs(error) * TURN_SLOWDOWN_RATE))
@@ -400,12 +426,7 @@ def follow_line():
 
     robot.drive(current_speed, correction)
 
-    # 簡易特徵過濾：黃色/紅色的反射率通常不會是完美的 0 (黑) 或 100 (白)，
-    # 這裡我們選擇每 10 次執行 1 次顏色檢測，或是當反射值處於曖昧區間時檢測。
-    # 為了程式穩定性，最安全的做法是直接在循跡中定期讀取，但 EV3 顏色切換較慢。
-    # 折衷方案：直接讓主迴圈呼叫 check_stop_color。
-    # 這裡將顏色判斷保留為獨立函式，或在此處強制偵測。
-    return check_stop_color()
+    return None
 
 
 def place_parts():
@@ -428,6 +449,48 @@ def place_parts():
         wait(800)
 
 
+def rotate_until_line(direction, max_angle=LINE_RECOVERY_MAX_ANGLE):
+    turned_angle = 0
+
+    while turned_angle < max_angle:
+        step_angle = min(LINE_RECOVERY_STEP_ANGLE, max_angle - turned_angle)
+        robot.turn(direction * step_angle)
+        turned_angle += step_angle
+
+        err, _ = read_line_position()
+        if abs(err) < LINE_RECOVERY_ERROR_TOLERANCE:
+            return True, turned_angle
+
+        wait(10)
+
+    return False, turned_angle
+
+
+def recover_line():
+    pid.reset()
+    start_angle = robot.angle()
+
+    while True:
+        err, val = read_line_position()
+        if abs(err) < 10:
+            break
+
+        current_angle = robot.angle()
+        turned_angle = abs(current_angle - start_angle)
+        if turned_angle >= LINE_RECOVERY_MAX_ANGLE:
+            robot.stop()
+            robot.turn(start_angle - current_angle)
+            pid.reset()
+            break
+
+        corr = pid.compute(err) * PID_OUTPUT_SCALE
+        corr = max(-50, min(50, corr))
+        robot.drive(0, corr)
+        wait(10)
+
+    robot.stop()
+
+
 # =====================================================
 #  主程式
 # =====================================================
@@ -444,8 +507,8 @@ def main():
         # 低電量但仍允許啟動，只是警告
 
     # 初始化數據
-    show_status("Cal Line Thr & Color?", "OK: Press Center", "SKIP: Press UP")
-    if wait_button_press(Button.CENTER, Button.UP):
+    show_status("Cal Line Thr & Color?", "OK: Press UP", "CANCEL: Press Touch")
+    if wait_button_or_touch_cancel(Button.UP, touch_sensor):
         calibrate_sensors()
 
         wait(1000)
@@ -457,7 +520,7 @@ def main():
     ev3.speaker.beep(frequency=600, duration=200)
     wait(1000)  # 啟動延遲
 
-    # ---- 主循環（無限執行，直到手動停止）------
+    # ---- 主循環 ----
     zones_visited_all = 0  # 造訪過的全部置物區數
     zones_placed_all = 0  # 放置過的全部置物區數
 
@@ -477,9 +540,18 @@ def main():
             "Visited: {}".format(zones_visited_all),
             "Placed: {}".format(zones_placed_all),
         )
+
         stop_color = follow_line()
 
         if stop_color == Color.YELLOW:
+            now = yellow_seen_timer.time()
+            yellow_is_new = now - last_yellow_seen_ms >= YELLOW_REACTION_COOLDOWN
+            last_yellow_seen_ms = now
+
+            if not yellow_is_new:
+                yellow_count = 0
+                continue
+
             yellow_count += 1
             if yellow_count >= 1:  # 連續 1 次才確認為黃線
                 zones_visited_all += 1
@@ -489,9 +561,6 @@ def main():
                 if zones_visited_current != round_finish + 1:
                     continue
 
-                # 到達放置區
-                wait(300)
-
                 zones_placed_all += 1
 
                 # 到達放置區
@@ -500,12 +569,10 @@ def main():
 
                 # 放置零件
                 place_parts()
-
                 show_status("Placed!", "Total: {}".format(zones_placed_all))
 
-                # 前進跨越黃線，避免下次循跡立刻再偵測到黃色
-                robot.straight(10)
-                wait(300)
+                recover_line()
+                segment_timer.reset()
                 continue
         else:
             yellow_count = 0  # 非黃色則重置計數器
@@ -532,9 +599,12 @@ def main():
                 # 等待觸碰感測器啟動下一輪
                 wait_touch_press(touch_sensor)
 
-                # 前進跨越紅線，避免下次循跡立刻再偵測到紅色
+                # 前進跨越紅線
                 robot.straight(10)
                 wait(300)
+
+                recover_line()
+                segment_timer.reset()
                 continue
 
         # Timeout 保護：循跡過久表示可能脱軌
@@ -546,7 +616,7 @@ def main():
             pid.reset()
             segment_timer.reset()
 
-        # 定期檢測電量（使用獨立計時器，可靠觸發）
+        # 定期檢測電量
         if battery_timer.time() > BATTERY_CHECK_INTERVAL:
             battery_timer.reset()
             check_battery()
