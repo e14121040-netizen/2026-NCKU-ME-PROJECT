@@ -34,7 +34,7 @@ const uint8_t ESPNOW_CHANNEL = 1;
 // =====================================================
 uint8_t Leg_Address[] = {0x58, 0x8C, 0x81, 0x9D, 0xF6, 0x90};       // C3 #1 腿部
 uint8_t turntableZ_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #2 大圓盤+z
-uint8_t servoClaw_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};   // C3 #3 Servo
+uint8_t servoClaw_Address[] = {0x58, 0x8C, 0x81, 0xA1, 0x30, 0xD0};   // C3 #3 Servo
 
 static const char *BLE_DEVICE_NAME = "ESP32_MainController";
 static const char *SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
