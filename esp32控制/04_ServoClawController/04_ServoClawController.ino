@@ -10,7 +10,7 @@
  *  - 控制 θ 旋轉（MG996R 180° 標準伺服）
  *  - 控制夾爪開合（MG996R 180° 標準伺服）
  *  - 控制承物盒擋板（MG996R 180° 標準伺服，旋轉門式）
- *  - 限位開關保護 r 齒條兩端行程
+ *  - 超時自動停止保護 r 齒條行程
  *  - Serial Monitor 手動測試模式
  *
  *  馬達配置：
@@ -47,15 +47,13 @@
  *  GPIO 2 (PWM)  -> MG996R 180°（夾爪開合）── 信號線
  *  GPIO 3 (PWM)  -> MG996R 180°（承物盒擋板）── 信號線
  *
- *  限位開關：
- *  GPIO 4  -> r 齒條伸出極限 (Limit Switch, 常開 NO, 接 GND)
- *  GPIO 5  -> r 齒條縮回極限
+
  *
  *  注意：
  *  - ESP32-C3 不支援 BluetoothSerial，使用 ESP-NOW
  *  - Servo 供電需 XL4015 5A 降壓模組 5V 輸出（Servo 專用），不可從 C3 取電
  *  - 360° 連續旋轉舵機：write(90) = 停止, write(0) = 全速反轉, write(180) = 全速正轉
- *  - 360° 舵機沒有位置回饋，靠限位開關防止齒條過行程
+ *  - 360° 舵機沒有位置回饋，靠超時保護防止齒條過行程
  */
 
 #include <esp_now.h>
@@ -79,13 +77,7 @@ Servo servoTheta;   // 180° 標準
 Servo servoClaw;    // 180° 標準
 Servo servoGate;    // 180° 標準（擋板）
 
-// =====================================================
-//  限位開關腳位
-//  接法：GPIO ---- Limit Switch (NO) ---- GND
-//  使用 INPUT_PULLUP：未觸發 = HIGH，觸發 = LOW
-// =====================================================
-const int limitR_Extend  = 4;   // r 齒條伸出極限
-const int limitR_Retract = 5;   // r 齒條縮回極限
+
 
 // =====================================================
 //  Servo 角度設定
@@ -116,7 +108,7 @@ int currentClawAngle  = CLAW_OPEN_ANGLE;
 int currentGateAngle  = GATE_CLOSE_ANGLE;
 
 // =====================================================
-//  r 齒條運行狀態（用於限位開關檢測）
+//  r 齒條運行狀態（用於超時保護檢測）
 // =====================================================
 bool rExtending = false;   // 正在伸出
 bool rRetracting = false;  // 正在縮回
@@ -145,12 +137,6 @@ void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
 // =====================================================
 
 void rExtend() {
-  // 檢查限位開關
-  if (digitalRead(limitR_Extend) == LOW) {
-    Serial.println("!! r Extend Limit Hit -> STOP");
-    rStop();
-    return;
-  }
   servoR.write(R_EXTEND);
   rExtending = true;
   rRetracting = false;
@@ -159,11 +145,6 @@ void rExtend() {
 }
 
 void rRetract() {
-  if (digitalRead(limitR_Retract) == LOW) {
-    Serial.println("!! r Retract Limit Hit -> STOP");
-    rStop();
-    return;
-  }
   servoR.write(R_RETRACT);
   rExtending = false;
   rRetracting = true;
@@ -271,19 +252,7 @@ void checkRTimeout() {
   }
 }
 
-// =====================================================
-//  安全保護：即時限位開關檢測
-// =====================================================
-void checkLimitSwitches() {
-  if (rExtending && digitalRead(limitR_Extend) == LOW) {
-    Serial.println("!! r Extend Limit -> Emergency STOP");
-    rStop();
-  }
-  if (rRetracting && digitalRead(limitR_Retract) == LOW) {
-    Serial.println("!! r Retract Limit -> Emergency STOP");
-    rStop();
-  }
-}
+
 
 // =====================================================
 //  處理指令（ESP-NOW 或 Serial 共用）
@@ -339,9 +308,7 @@ void setup() {
   Serial.println("  MG996R 360°(r) + 180°(θ) + 180°(claw)");
   Serial.println("==========================================");
 
-  // ----- 限位開關設定（內部上拉） -----
-  pinMode(limitR_Extend,  INPUT_PULLUP);
-  pinMode(limitR_Retract, INPUT_PULLUP);
+
 
   // ----- Servo 初始化 -----
   servoR.attach(servoR_Pin);
@@ -392,7 +359,7 @@ void setup() {
 void loop() {
   // ----- 安全保護 -----
   checkRTimeout();
-  checkLimitSwitches();
+
 
   // ----- 處理 ESP-NOW 接收的指令 -----
   if (newDataReceived) {
@@ -450,10 +417,7 @@ void loop() {
         Serial.print("  Gate angle: ");
         Serial.print(currentGateAngle);
         Serial.println("°");
-        Serial.print("  Limit R_Ext: ");
-        Serial.println(digitalRead(limitR_Extend) == LOW ? "TRIGGERED" : "OK");
-        Serial.print("  Limit R_Ret: ");
-        Serial.println(digitalRead(limitR_Retract) == LOW ? "TRIGGERED" : "OK");
+
         Serial.println("--------------");
         break;
       default:

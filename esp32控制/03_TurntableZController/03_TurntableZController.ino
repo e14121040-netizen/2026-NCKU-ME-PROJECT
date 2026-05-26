@@ -10,7 +10,7 @@
  *  - 控制 z 方向升降（JGY370 蝸桿馬達，12V，自鎖）
  *  - 使用 BTS7960 (IBT-2) #3 驅動大圓盤馬達
  *  - 使用 BTS7960 (IBT-2) #4 驅動 z 升降馬達
- *  - 限位開關 (Limit Switch) 安全保護
+ *  - 超時自動斷電安全保護
  *  - Serial Monitor 手動測試模式
  *
  *  馬達配置：
@@ -41,18 +41,11 @@
  *
  *  GND     -> GND (共地)
  *
- *  限位開關：
- *  GPIO 7  -> 大圓盤左極限 (Limit Switch, 常開 NO, 接 GND)
- *  GPIO 8  -> 大圓盤右極限
- *  GPIO 9  -> z 上升極限
- *  GPIO 10 -> z 下降極限
- *
  *  注意：
  *  - BTS7960 #3/#4 R_EN/L_EN 接 3.3V 常開，不佔 GPIO
  *  - XD-25GA 370 減速箱有自鎖效應，斷電後可保持位置
  *  - JGY370 蝸桿自鎖，斷電後不會下滑
  *  - 供電：LM2596 降壓至 5V（MCU 專用），BTS7960 直接接電池 12V
- *  - 如果大圓盤可 360° 自由旋轉，可省略 GPIO 7, 8 限位開關
  */
 
 #include <esp_now.h>
@@ -79,15 +72,6 @@ const int motorTurntable_LPWM = 1;   // 反轉 PWM
 const int motorZ_RPWM = 3;   // 上升 PWM
 const int motorZ_LPWM = 4;   // 下降 PWM
 
-// =====================================================
-//  限位開關腳位
-//  接法：GPIO ---- Limit Switch (NO) ---- GND
-//  使用 INPUT_PULLUP：未觸發 = HIGH，觸發 = LOW
-// =====================================================
-const int limitTurntable_Left  = 7;   // 大圓盤左極限
-const int limitTurntable_Right = 8;   // 大圓盤右極限
-const int limitZ_Up            = 9;   // z 上升極限
-const int limitZ_Down          = 10;  // z 下降極限
 
 // =====================================================
 //  PWM 設定
@@ -244,11 +228,7 @@ void setupEspNow() {
 
 // --- 大圓盤：左轉 (BTS7960 #3) ---
 void turntableLeft() {
-  if (digitalRead(limitTurntable_Left) == LOW) {
-    Serial.println("!! Turntable Left Limit Hit -> STOP");
-    turntableStop();
-    return;
-  }
+
   ledcWrite(motorTurntable_RPWM, dutyCycle);
   ledcWrite(motorTurntable_LPWM, 0);
 
@@ -263,11 +243,7 @@ void turntableLeft() {
 
 // --- 大圓盤：右轉 (BTS7960 #3) ---
 void turntableRight() {
-  if (digitalRead(limitTurntable_Right) == LOW) {
-    Serial.println("!! Turntable Right Limit Hit -> STOP");
-    turntableStop();
-    return;
-  }
+
   ledcWrite(motorTurntable_RPWM, 0);
   ledcWrite(motorTurntable_LPWM, dutyCycle);
 
@@ -291,11 +267,7 @@ void turntableStop() {
 
 // --- z 方向：上升 (BTS7960 #4) ---
 void zUp() {
-  if (digitalRead(limitZ_Up) == LOW) {
-    Serial.println("!! Z Up Limit Hit -> STOP");
-    zStop();
-    return;
-  }
+
   ledcWrite(motorZ_RPWM, dutyCycle);
   ledcWrite(motorZ_LPWM, 0);
 
@@ -310,11 +282,7 @@ void zUp() {
 
 // --- z 方向：下降 (BTS7960 #4) ---
 void zDown() {
-  if (digitalRead(limitZ_Down) == LOW) {
-    Serial.println("!! Z Down Limit Hit -> STOP");
-    zStop();
-    return;
-  }
+
   ledcWrite(motorZ_RPWM, 0);
   ledcWrite(motorZ_LPWM, dutyCycle);
 
@@ -357,34 +325,7 @@ void checkTimeout() {
   }
 }
 
-// =====================================================
-//  安全保護：即時限位開關檢測
-// =====================================================
-void checkLimitSwitches() {
-  // 大圓盤限位 (BTS7960 #3)
-  if (motorTurntable_running) {
-    if (turntableDirection > 0 && digitalRead(limitTurntable_Left) == LOW) {
-      Serial.println("!! Turntable Left Limit -> Emergency STOP");
-      turntableStop();
-    }
-    if (turntableDirection < 0 && digitalRead(limitTurntable_Right) == LOW) {
-      Serial.println("!! Turntable Right Limit -> Emergency STOP");
-      turntableStop();
-    }
-  }
 
-  // z 方向限位 (BTS7960 #4)
-  if (motorZ_running) {
-    if (zDirection > 0 && digitalRead(limitZ_Up) == LOW) {
-      Serial.println("!! Z Up Limit -> Emergency STOP");
-      zStop();
-    }
-    if (zDirection < 0 && digitalRead(limitZ_Down) == LOW) {
-      Serial.println("!! Z Down Limit -> Emergency STOP");
-      zStop();
-    }
-  }
-}
 
 // =====================================================
 //  處理指令（ESP-NOW 或 Serial 共用）
@@ -437,11 +378,7 @@ void setup() {
   ledcAttachChannel(motorZ_RPWM, pwmFreq, pwmResolution, pwmCh_Z_RPWM);
   ledcAttachChannel(motorZ_LPWM, pwmFreq, pwmResolution, pwmCh_Z_LPWM);
 
-  // ----- 限位開關設定（內部上拉） -----
-  pinMode(limitTurntable_Left,  INPUT_PULLUP);
-  pinMode(limitTurntable_Right, INPUT_PULLUP);
-  pinMode(limitZ_Up,            INPUT_PULLUP);
-  pinMode(limitZ_Down,          INPUT_PULLUP);
+
 
   // ----- 初始停止 -----
   allStop();
@@ -474,7 +411,7 @@ void setup() {
 void loop() {
   // ----- 安全保護 -----
   checkTimeout();
-  checkLimitSwitches();
+
 
   // ----- 處理 ESP-NOW 接收的指令 -----
   if (newDataReceived) {
@@ -520,14 +457,7 @@ void loop() {
         Serial.println(motorTurntable_running ? "YES" : "NO");
         Serial.print("  Motor Z running: ");
         Serial.println(motorZ_running ? "YES" : "NO");
-        Serial.print("  Limit Turntable_L: ");
-        Serial.println(digitalRead(limitTurntable_Left) == LOW ? "TRIGGERED" : "OK");
-        Serial.print("  Limit Turntable_R: ");
-        Serial.println(digitalRead(limitTurntable_Right) == LOW ? "TRIGGERED" : "OK");
-        Serial.print("  Limit Z_Up: ");
-        Serial.println(digitalRead(limitZ_Up) == LOW ? "TRIGGERED" : "OK");
-        Serial.print("  Limit Z_Down: ");
-        Serial.println(digitalRead(limitZ_Down) == LOW ? "TRIGGERED" : "OK");
+
         Serial.println("--------------");
         break;
       default:
