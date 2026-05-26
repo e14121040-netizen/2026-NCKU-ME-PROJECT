@@ -16,8 +16,8 @@
  *  馬達配置：
  *  - MG996R 360°（GPIO 0）：r 齒條伸縮，人眼判斷位置
  *  - MG996R 180°（GPIO 1）：θ 旋轉
- *  - MG996R 180°（GPIO 2）：夾爪開合
- *  - MG996R 180°（GPIO 3）：承物盒擋板（旋轉門式）
+ *  - MG996R 180°（GPIO 4）：夾爪開合
+ *  - MG996R 180°（GPIO 5）：承物盒擋板（旋轉門式）
  *
  *  指令協議（ESP-NOW 接收 / Serial 手動測試）：
  *    CMD_SERVO_STOP = 0  → 全部停止（360° 停轉，180° 保持）
@@ -44,8 +44,8 @@
  *  ─────────────────────
  *  GPIO 0 (PWM)  -> MG996R 360°（r 齒條伸縮）── 信號線
  *  GPIO 1 (PWM)  -> MG996R 180°（θ 旋轉）── 信號線
- *  GPIO 2 (PWM)  -> MG996R 180°（夾爪開合）── 信號線
- *  GPIO 3 (PWM)  -> MG996R 180°（承物盒擋板）── 信號線
+ *  GPIO 4 (PWM)  -> MG996R 180°（夾爪開合）── 信號線
+ *  GPIO 5 (PWM)  -> MG996R 180°（承物盒擋板）── 信號線
  *
 
  *
@@ -69,8 +69,8 @@ bool newDataReceived = false;
 // =====================================================
 const int servoR_Pin     = 0;   // MG996R 360° — r 齒條
 const int servoTheta_Pin = 1;   // MG996R 180° — θ 旋轉
-const int servoClaw_Pin  = 2;   // MG996R 180° — 夾爪開合
-const int servoGate_Pin  = 3;   // MG996R 180° — 承物盒擋板
+const int servoClaw_Pin  = 4;   // MG996R 180° — 夾爪開合
+const int servoGate_Pin  = 5;   // MG996R 180° — 承物盒擋板
 
 Servo servoR;       // 360° 連續旋轉
 Servo servoTheta;   // 180° 標準
