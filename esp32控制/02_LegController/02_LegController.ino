@@ -6,9 +6,9 @@
  *
  *  功能：
  *  - 透過 ESP-NOW 接收主控板（ESP32）腿部指令
- *  - 控制左右兩顆 JGB37-520 直流減速馬達（差速轉向）
+ *  - 控制左右兩顆 JGB37-520 直流減速馬達（前後同速、左右反向原地旋轉）
  *  - 使用 BTS7960 (IBT-2) ×2 驅動馬達（MOSFET H-Bridge）
- *  - 僅支援原地旋轉轉向（不使用差速轉向，避免重心不穩）
+ *  - 僅支援原地旋轉轉向（不做左右輪不同速轉彎，避免重心不穩）
  *
  *  指令協議（ESP-NOW 接收 / Serial 手動測試）：
  *    CMD_LEG_STOP    = 0  → 停止
@@ -17,7 +17,7 @@
  *    CMD_SPIN_LEFT   = 3  → 原地左旋（左反右正）
  *    CMD_SPIN_RIGHT  = 4  → 原地右旋（左正右反）
  *
- *  ⚠ 差速轉向（CMD_LEFT/CMD_RIGHT）已移除，避免重心不穩。
+ *  ⚠ 左右輪不同速轉彎（CMD_LEFT/CMD_RIGHT）已移除，避免重心不穩。
  *
  *  Serial 快捷鍵：
  *    'f'=前進 'b'=後退 'l'=左旋 'r'=右旋
@@ -47,7 +47,10 @@
 
 #include <esp_now.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include "../protocol.h"
+
+const uint8_t ESPNOW_CHANNEL = 1;
 
 leg_now_message incomingMsg;
 bool newDataReceived = false;
@@ -78,9 +81,12 @@ const int pwmCh_R_LPWM = 3;
 //  速度設定
 // =====================================================
 int dutyCycle = 200;              // 預設速度
-const int SPEED_MIN  = 80;
-const int SPEED_MAX  = 255;
 const int SPEED_STEP = 20;
+
+// 主控板會定期重送持續移動命令；若封包中斷則自動停車。
+const unsigned long COMMAND_TIMEOUT_MS = 1200;
+unsigned long lastRemoteCommandMs = 0;
+bool remoteMotionActive = false;
 
 // =====================================================
 //  ESP-NOW 回調：接收到資料時觸發
@@ -150,9 +156,19 @@ void spinRight(int spd) {
 // =====================================================
 //  處理指令
 // =====================================================
-void executeCommand(uint8_t cmd, uint8_t spd) {
+bool isMotionCommand(uint8_t cmd) {
+  return cmd == CMD_FORWARD || cmd == CMD_BACKWARD ||
+         cmd == CMD_SPIN_LEFT || cmd == CMD_SPIN_RIGHT;
+}
+
+void executeCommand(uint8_t cmd, uint8_t spd, bool fromRemote = false) {
   if (spd > 0) {
     dutyCycle = constrain(spd, SPEED_MIN, SPEED_MAX);
+  }
+
+  if (fromRemote) {
+    lastRemoteCommandMs = millis();
+    remoteMotionActive = isMotionCommand(cmd);
   }
 
   switch (cmd) {
@@ -165,6 +181,18 @@ void executeCommand(uint8_t cmd, uint8_t spd) {
       Serial.print("Unknown CMD: ");
       Serial.println(cmd);
       break;
+  }
+}
+
+void checkCommandTimeout() {
+  if (!remoteMotionActive) {
+    return;
+  }
+
+  if (millis() - lastRemoteCommandMs > COMMAND_TIMEOUT_MS) {
+    Serial.println("!! Remote command TIMEOUT -> Safety STOP");
+    stopMotors();
+    remoteMotionActive = false;
   }
 }
 
@@ -191,6 +219,14 @@ void setup() {
 
   // ----- ESP-NOW 初始化 -----
   WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+
+  esp_err_t channelResult = esp_wifi_set_channel(ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  if (channelResult != ESP_OK) {
+    Serial.print("Failed to set WiFi channel, err=");
+    Serial.println(channelResult);
+  }
+
   Serial.print("MAC Address: ");
   Serial.println(WiFi.macAddress());
 
@@ -222,8 +258,10 @@ void loop() {
   // ----- 處理 ESP-NOW 指令 -----
   if (newDataReceived) {
     newDataReceived = false;
-    executeCommand(incomingMsg.command, incomingMsg.speed);
+    executeCommand(incomingMsg.command, incomingMsg.speed, true);
   }
+
+  checkCommandTimeout();
 
   // ----- Serial 手動測試 -----
   if (Serial.available()) {
@@ -247,6 +285,7 @@ void loop() {
       case '?':
         Serial.println("--- Status ---");
         Serial.print("  Speed: "); Serial.println(dutyCycle);
+        Serial.print("  Remote active: "); Serial.println(remoteMotionActive ? "YES" : "NO");
         Serial.print("  Driver: BTS7960 x2");
         Serial.println();
         Serial.println("--------------");

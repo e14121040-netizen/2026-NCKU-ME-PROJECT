@@ -65,10 +65,41 @@ def main() -> int:
         for token in duplicate_tokens:
             require(token not in text, f"{rel} must not redefine {token}", failures)
 
+    leg_rel = "esp32控制/02_LegController/02_LegController.ino"
+    leg_text = read(leg_rel)
+    require("const int SPEED_MIN" not in leg_text, f"{leg_rel} must not shadow shared SPEED_MIN", failures)
+    require("const int SPEED_MAX" not in leg_text, f"{leg_rel} must not shadow shared SPEED_MAX", failures)
+    require("#include <esp_wifi.h>" in leg_text, f"{leg_rel} must include esp_wifi.h for fixed ESPNOW channel", failures)
+    require("esp_wifi_set_channel" in leg_text, f"{leg_rel} must set the ESP-NOW WiFi channel", failures)
+    require("COMMAND_TIMEOUT_MS" in leg_text, f"{leg_rel} must define a remote command watchdog timeout", failures)
+    require("checkCommandTimeout" in leg_text, f"{leg_rel} must stop motors when remote commands time out", failures)
+
+    tz_rel = "esp32控制/03_TurntableZController/03_TurntableZController.ino"
+    tz_text = read(tz_rel)
+    require("const int SPEED_MIN" not in tz_text, f"{tz_rel} must not shadow shared SPEED_MIN", failures)
+    require("const int SPEED_MAX" not in tz_text, f"{tz_rel} must not shadow shared SPEED_MAX", failures)
+
+    servo_rel = "esp32控制/04_ServoClawController/04_ServoClawController.ino"
+    servo_text = read(servo_rel)
+    require("#include <esp_wifi.h>" in servo_text, f"{servo_rel} must include esp_wifi.h for fixed ESPNOW channel", failures)
+    require("esp_wifi_set_channel" in servo_text, f"{servo_rel} must set the ESP-NOW WiFi channel", failures)
+
     main_rel = "esp32控制/01_MainController/01_MainController.ino"
     main_text = read(main_rel)
     for token in ("LEGSTOP", "TZSTOP", "SERVOSTOP", "SPD:", "GATEOPEN", "GATECLOSE"):
         require(token in main_text, f"{main_rel} must support {token}", failures)
+    require(
+        "COMMAND_KEEPALIVE_INTERVAL_MS" in main_text,
+        f"{main_rel} must send keepalive packets for sustained leg movement",
+        failures,
+    )
+    require("case 'I':" in main_text, f"{main_rel} must accept uppercase I for Theta+", failures)
+    require("case 'K':" in main_text, f"{main_rel} must accept uppercase K for Theta-", failures)
+    require(
+        "uint8_t turntableZ_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}" in main_text,
+        f"{main_rel} must keep C3 #2 MAC as placeholder until measured",
+        failures,
+    )
 
     doc_rels = [
         "README.md",
@@ -118,6 +149,26 @@ def main() -> int:
         ble_guide_text = read(ble_guide_rel)
         for token in ("BLE Controller – Arduino ESP32", "LEGSTOP", "TZSTOP", "SERVOSTOP", "STOP"):
             require(token in ble_guide_text, f"{ble_guide_rel} must document {token}", failures)
+
+    root_readme = read("README.md")
+    pickup_readme = read("取物機器人(八足Jansen)/README.md")
+    wiring_rel = "取物機器人(八足Jansen)/電控/接線圖.md"
+    wiring_text = read(wiring_rel)
+    power_rel = "取物機器人(八足Jansen)/電控/電源預算.md"
+    power_text = read(power_rel)
+    sop_rel = "取物機器人(八足Jansen)/電控/電控組裝SOP.md"
+    sop_text = read(sop_rel)
+    bom_text = read("BOM.md")
+    pickup_bom_text = read("取物機器人(八足Jansen)/BOM.md")
+
+    require("原地旋轉轉向" in root_readme, "README.md must describe walking turn mode as spin turn", failures)
+    require("差速轉向" not in pickup_readme, "pickup README must not describe the current leg control as differential turn", failures)
+    require("Servo ×4" in wiring_text, f"{wiring_rel} must consistently document four servos", failures)
+    require("VCC" in wiring_text and "3.3V" in wiring_text, f"{wiring_rel} must document BTS7960 logic VCC wiring", failures)
+    require("BMS" in bom_text and "保險絲座" in bom_text and "端子台" in bom_text, "BOM.md must include power safety parts", failures)
+    require("BMS" in pickup_bom_text and "保險絲座" in pickup_bom_text and "端子台" in pickup_bom_text, "pickup BOM must include power safety parts", failures)
+    require("2S 18650" in power_text and "不建議" in power_text, f"{power_rel} must document XL4015 two-cell feasibility limits", failures)
+    require("2S 18650" in sop_text and "共地" in sop_text, f"{sop_rel} must document separate servo battery wiring and common ground", failures)
 
     if failures:
         print("ESP32 mobile control consistency check FAILED:")

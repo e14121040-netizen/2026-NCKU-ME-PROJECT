@@ -58,8 +58,11 @@
 
 #include <esp_now.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include <ESP32Servo.h>
 #include "../protocol.h"
+
+const uint8_t ESPNOW_CHANNEL = 1;
 
 servo_claw_now_message incomingMsg;
 bool newDataReceived = false;
@@ -324,6 +327,14 @@ void setup() {
 
   // ----- ESP-NOW 初始化 -----
   WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+
+  esp_err_t channelResult = esp_wifi_set_channel(ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  if (channelResult != ESP_OK) {
+    Serial.print("Failed to set WiFi channel, err=");
+    Serial.println(channelResult);
+  }
+
   Serial.print("MAC Address: ");
   Serial.println(WiFi.macAddress());
 

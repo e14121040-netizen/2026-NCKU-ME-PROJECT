@@ -27,6 +27,7 @@
 #include "../protocol.h"
 
 const uint8_t ESPNOW_CHANNEL = 1;
+const unsigned long COMMAND_KEEPALIVE_INTERVAL_MS = 250;
 
 // =====================================================
 //  子控板 MAC 地址
@@ -46,6 +47,7 @@ bool bleClientConnected = false;
 bool lastBleClientConnected = false;
 
 uint8_t currentSpeed = FULL_SPEED;
+unsigned long lastLegSendMs = 0;
 
 uint8_t legCommand = CMD_LEG_STOP;
 uint8_t legSpeed = 0;
@@ -145,6 +147,11 @@ uint8_t legHalfSpeed() {
   return normalizeLegSpeed((uint8_t)max((int)SPEED_MIN, (int)currentSpeed / 2));
 }
 
+bool isLegMotionCommand(uint8_t cmd) {
+  return cmd == CMD_FORWARD || cmd == CMD_BACKWARD ||
+         cmd == CMD_SPIN_LEFT || cmd == CMD_SPIN_RIGHT;
+}
+
 void queueLegCommand(uint8_t cmd, uint8_t spd) {
   legCommand = cmd;
   legSpeed = spd;
@@ -202,6 +209,7 @@ bool sendServoCommandNow() {
 void sendPendingCommands() {
   if (legDirty) {
     if (sendLegCommandNow()) {
+      lastLegSendMs = millis();
       notifyBle("-> Leg CMD:" + String(legCommand) + " SPD:" + String(legSpeed));
     }
     legDirty = false;
@@ -219,6 +227,21 @@ void sendPendingCommands() {
       notifyBle("-> ServoClaw CMD:" + String(servoCommand));
     }
     servoDirty = false;
+  }
+}
+
+void sendLegKeepaliveIfNeeded() {
+  if (legDirty || !isLegMotionCommand(legCommand)) {
+    return;
+  }
+
+  if (millis() - lastLegSendMs < COMMAND_KEEPALIVE_INTERVAL_MS) {
+    return;
+  }
+
+  if (sendLegCommandNow()) {
+    lastLegSendMs = millis();
+    Serial.println("-> Leg keepalive");
   }
 }
 
@@ -324,10 +347,12 @@ void processSingleChar(char c) {
       notifyBle("CMD: r Retract");
       break;
     case 'i':
+    case 'I':
       queueServoCommand(CMD_THETA_POS, 0);
       notifyBle("CMD: Theta+");
       break;
     case 'k':
+    case 'K':
       queueServoCommand(CMD_THETA_NEG, 0);
       notifyBle("CMD: Theta-");
       break;
@@ -644,5 +669,6 @@ void loop() {
   }
 
   sendPendingCommands();
+  sendLegKeepaliveIfNeeded();
   delay(20);
 }
