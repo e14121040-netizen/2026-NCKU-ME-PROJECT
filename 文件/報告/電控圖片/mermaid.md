@@ -8,16 +8,21 @@ graph TD
 
     %% ================= 電源系統 =================
     subgraph Power [機器人電源配置區]
-        BATT[4x 18650 鋰電池<br>串聯 14.8V]
+        BATT_LEG[腿部 4S 18650<br>串聯 14.8V]
+        BATT_OTHER[其他機構 4S 18650<br>串聯 14.8V]
         XL4015[XL4015 降壓模組<br>5V / 5A]
-        LM2596[LM2596 降壓模組<br>5V / 3A]
+        LM2596_LEG[LM2596-Leg<br>5V / 3A]
+        LM2596_OTHER[LM2596-Other<br>5V / 3A]
 
-        BATT -->|14.8V 供電| XL4015
-        BATT -->|14.8V 供電| LM2596
-        BATT -->|14.8V 供電| BTS_VMOT[供電至：各區<br>BTS7960 VMOT 腳位]
+        BATT_LEG -->|14.8V 供電| BTS_LEG_VMOT[供電至：腿部<br>BTS7960 #1/#2]
+        BATT_LEG -->|14.8V 供電| LM2596_LEG
+        BATT_OTHER -->|14.8V 供電| XL4015
+        BATT_OTHER -->|14.8V 供電| LM2596_OTHER
+        BATT_OTHER -->|14.8V 供電| BTS_OTHER_VMOT[供電至：大圓盤 / Z<br>BTS7960 #3/#4]
         
         XL4015 -->|5V 穩定大電流| SERVO_PWR[供電至：所有<br>伺服馬達 VCC 接腳]
-        LM2596 -->|5V 穩定電源| MCU_PWR[供電至：所有<br>C3 控制板 5V 腳位]
+        LM2596_LEG -->|5V 穩定電源| C3_1_PWR[供電至：C3 #1 5V 腳位]
+        LM2596_OTHER -->|5V 穩定電源| MCU_PWR[供電至：C3 #2/#3 5V 腳位]
     end
 
     %% ================= 主控系統 =================
@@ -29,7 +34,7 @@ graph TD
     %% ================= 子控板 1 =================
     subgraph Slave1 [ESP32-C3 #1：腿部移動子系統]
         C3_1[ESP32-C3 #1<br>控制板] ==>|PWM 控制訊號 L/R| BTS_1[BTS7960<br>驅動器 x2]
-        BTS_1 ==>|大電流驅動| M_LEG[JGB37-520<br>減速馬達 x2]
+        BTS_1 ==>|大電流驅動| M_LEG[JGB37-555 66rpm<br>減速馬達 x2]
     end
 
     %% ================= 子控板 2 =================
@@ -54,6 +59,6 @@ graph TD
 
 
     %% ================= 套用樣式 =================
-    class BATT,XL4015,LM2596,BTS_VMOT,SERVO_PWR,MCU_PWR power;
+    class BATT_LEG,BATT_OTHER,XL4015,LM2596_LEG,LM2596_OTHER,BTS_LEG_VMOT,BTS_OTHER_VMOT,SERVO_PWR,C3_1_PWR,MCU_PWR power;
     class APP,ESP32_M,C3_1,C3_2,C3_3 mcu;
     class M_LEG,M_DISCZ,SRV_ALL motor;

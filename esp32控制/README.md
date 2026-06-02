@@ -44,7 +44,8 @@ arduino-cli upload  --fqbn esp32:esp32:esp32c3 -p /dev/cu.usbmodem* 00_macaddres
 # 2. 把 MAC 填進 01_MainController.ino
 
 # 3. 上傳主控板
-arduino-cli compile --fqbn esp32:esp32:esp32 01_MainController/
+# BLE + ESP-NOW 主控程式需使用 Huge APP partition
+arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=huge_app 01_MainController/
 
 # 4. 上傳三塊子控板
 arduino-cli compile --fqbn esp32:esp32:esp32c3 02_LegController/
@@ -59,6 +60,12 @@ arduino-cli compile --fqbn esp32:esp32:esp32c3 04_ServoClawController/
   - 跳過 placeholder peer 的 `esp_now_add_peer`
   - 在 Serial / BLE log 中明確提示未配置
   - 不對 placeholder peer 送封包
+
+## ESP32 主控板 Partition 注意
+
+- `01_MainController` 同時使用 BLE、Wi-Fi/ESP-NOW，Arduino ESP32 core 3.3.7 下預設 `Default 4MB with spiffs` 分割區會太小。
+- Arduino IDE 上傳主控板時，`Partition Scheme` 請選 `Huge APP (3MB No OTA/1MB SPIFFS)`。
+- `arduino-cli` 請使用 `esp32:esp32:esp32:PartitionScheme=huge_app`。
 
 ## 正式 BLE 文字命令
 
@@ -102,7 +109,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32c3 04_ServoClawController/
 | `STOP` | 全域急停 |
 | `SPD:xxx` | 設定腿部預設速度 |
 
-> `SPD:xxx` 建議使用 80~255。主控板會把過低值夾到可動範圍。
+> `SPD:xxx` 建議初測使用 120~150。主控板會把過低值夾到可動範圍；確認腿部馬達溫度與電流正常後再上調。
 
 ## 單字元相容命令
 
@@ -147,6 +154,6 @@ arduino-cli compile --fqbn esp32:esp32:esp32c3 04_ServoClawController/
 ## 供電提醒
 
 - Servo V+ 走 XL4015，不能從 C3 直接取電
-- C3 走 LM2596 5V
+- C3 走 LM2596 5V；腿部 C3 #1 使用腿部電池組的 LM2596-Leg，C3 #2/#3 使用其他機構電池組的 LM2596-Other
 - BTS7960 的 `R_EN / L_EN` 都必須接 3.3V
-- 所有 GND 必須共地
+- 各電源組內必須共地；腿部組與其他機構組透過 ESP-NOW 無線通訊，正式架構下不跨組共地

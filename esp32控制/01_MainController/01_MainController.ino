@@ -46,7 +46,7 @@ BLECharacteristic *txCharacteristic = nullptr;
 bool bleClientConnected = false;
 bool lastBleClientConnected = false;
 
-uint8_t currentSpeed = FULL_SPEED;
+uint8_t currentSpeed = LEG_DEFAULT_SPEED;
 unsigned long lastLegSendMs = 0;
 
 uint8_t legCommand = CMD_LEG_STOP;
@@ -646,7 +646,7 @@ void setup() {
   Serial.println("             TL TR UP DOWN TZSTOP");
   Serial.println("             EXTEND RETRACT OPEN CLOSE HOME");
   Serial.println("             GATEOPEN GATECLOSE SERVOSTOP STOP");
-  Serial.println("             SPD:200");
+  Serial.println("             SPD:150");
   Serial.println("-------------------------");
 }
 

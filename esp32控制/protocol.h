@@ -23,6 +23,7 @@
 // =====================================================
 const uint8_t FULL_SPEED = 200;
 const uint8_t HALF_SPEED = 120;
+const uint8_t LEG_DEFAULT_SPEED = 150;  // 4S 直供 12V 腿部馬達時的保守起始值
 const uint8_t SPEED_MIN = 80;
 const uint8_t SPEED_MAX = 255;
 
