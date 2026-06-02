@@ -48,7 +48,7 @@ MIN_SPEED_MARGIN = 7  # 保留的前進速度餘量
 
 # 放置機構參數
 HAS_PLACE_MOTOR = True  # 是否已安裝輸送/放置機構馬達
-PLACE_ANGLE = -45  # 放置機構單次旋轉角度
+PLACE_ANGLE = 225  # 放置機構單次旋轉角度
 PLACE_SPEED = 100  # 放置機構轉速 (deg/s)
 PLACE_WAIT = 1500  # 放置後等待時間 (ms)
 
@@ -528,7 +528,7 @@ def main():
     zones_visited_current = 0  # 當前圈數造訪過的置物區數
     round_finish = 0  # 已經完成的圈數
 
-    last_yellow_seen_ms = 0
+    last_yellow_seen_ms = -YELLOW_REACTION_COOLDOWN
 
     battery_timer = StopWatch()  # 電量檢查計時器
     yellow_seen_timer = StopWatch()  # 最後見到黃線計時器
