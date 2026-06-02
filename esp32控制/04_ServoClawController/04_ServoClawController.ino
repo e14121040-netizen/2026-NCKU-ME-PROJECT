@@ -10,6 +10,7 @@
  *  - 控制 θ 旋轉（MG996R 180° 標準伺服）
  *  - 控制夾爪開合（MG996R 180° 標準伺服）
  *  - 控制承物盒擋板（MG996R 180° 標準伺服，旋轉門式）
+ *  - GPIO 4/5 上電不輸出 PWM，收到夾爪 / 擋板指令後才啟用
  *  - 超時自動停止保護 r 齒條行程
  *  - Serial Monitor 手動測試模式
  *
@@ -80,6 +81,8 @@ Servo servoTheta;   // 180° 標準
 Servo servoClaw;    // 180° 標準
 Servo servoGate;    // 180° 標準（擋板）
 
+bool clawServoAttached = false;
+bool gateServoAttached = false;
 
 
 // =====================================================
@@ -186,7 +189,16 @@ void thetaNeg() {
 //  夾爪開合控制（180° 標準伺服）
 // =====================================================
 
+void attachClawServoIfNeeded() {
+  if (!clawServoAttached) {
+    servoClaw.attach(servoClaw_Pin);
+    clawServoAttached = true;
+    Serial.println("Claw servo PWM enabled");
+  }
+}
+
 void clawOpen() {
+  attachClawServoIfNeeded();
   currentClawAngle = CLAW_OPEN_ANGLE;
   servoClaw.write(currentClawAngle);
   Serial.print("Claw OPEN -> ");
@@ -195,6 +207,7 @@ void clawOpen() {
 }
 
 void clawClose() {
+  attachClawServoIfNeeded();
   currentClawAngle = CLAW_CLOSE_ANGLE;
   servoClaw.write(currentClawAngle);
   Serial.print("Claw CLOSE -> ");
@@ -206,7 +219,16 @@ void clawClose() {
 //  承物盒擋板控制（180° 標準伺服，旋轉門式）
 // =====================================================
 
+void attachGateServoIfNeeded() {
+  if (!gateServoAttached) {
+    servoGate.attach(servoGate_Pin);
+    gateServoAttached = true;
+    Serial.println("Gate servo PWM enabled");
+  }
+}
+
 void gateOpen() {
+  attachGateServoIfNeeded();
   currentGateAngle = GATE_OPEN_ANGLE;
   servoGate.write(currentGateAngle);
   Serial.print("Gate OPEN -> ");
@@ -215,6 +237,7 @@ void gateOpen() {
 }
 
 void gateClose() {
+  attachGateServoIfNeeded();
   currentGateAngle = GATE_CLOSE_ANGLE;
   servoGate.write(currentGateAngle);
   Serial.print("Gate CLOSE -> ");
@@ -316,14 +339,11 @@ void setup() {
   // ----- Servo 初始化 -----
   servoR.attach(servoR_Pin);
   servoTheta.attach(servoTheta_Pin);
-  servoClaw.attach(servoClaw_Pin);
-  servoGate.attach(servoGate_Pin);
 
   // ----- 初始位置 -----
   rStop();                        // 360° 停轉
   servoTheta.write(THETA_CENTER); // θ 居中
-  clawOpen();                     // 夾爪張開
-  gateClose();                    // 擋板關閉
+  Serial.println("Claw/Gate PWM disabled on boot; waiting for command");
 
   // ----- ESP-NOW 初始化 -----
   WiFi.mode(WIFI_STA);

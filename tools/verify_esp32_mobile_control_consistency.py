@@ -16,6 +16,29 @@ def require(condition: bool, message: str, failures: list[str]) -> None:
         failures.append(message)
 
 
+def extract_function_body(text: str, function_name: str) -> str:
+    signature = f"void {function_name}()"
+    signature_index = text.find(signature)
+    if signature_index == -1:
+        return ""
+
+    open_brace_index = text.find("{", signature_index)
+    if open_brace_index == -1:
+        return ""
+
+    depth = 0
+    for index in range(open_brace_index, len(text)):
+        char = text[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_brace_index + 1 : index]
+
+    return ""
+
+
 def main() -> int:
     failures: list[str] = []
 
@@ -83,6 +106,38 @@ def main() -> int:
     servo_text = read(servo_rel)
     require("#include <esp_wifi.h>" in servo_text, f"{servo_rel} must include esp_wifi.h for fixed ESPNOW channel", failures)
     require("esp_wifi_set_channel" in servo_text, f"{servo_rel} must set the ESP-NOW WiFi channel", failures)
+    servo_setup = extract_function_body(servo_text, "setup")
+    require(servo_setup, f"{servo_rel} must define setup()", failures)
+    require(
+        "servoClaw.attach" not in servo_setup,
+        f"{servo_rel} setup() must not attach GPIO 4 claw servo during boot",
+        failures,
+    )
+    require(
+        "servoGate.attach" not in servo_setup,
+        f"{servo_rel} setup() must not attach GPIO 5 gate servo during boot",
+        failures,
+    )
+    require(
+        "clawOpen()" not in servo_setup,
+        f"{servo_rel} setup() must not command claw servo during boot",
+        failures,
+    )
+    require(
+        "gateClose()" not in servo_setup,
+        f"{servo_rel} setup() must not command gate servo during boot",
+        failures,
+    )
+    require(
+        "attachClawServoIfNeeded" in servo_text,
+        f"{servo_rel} must lazily attach the GPIO 4 claw servo only when commanded",
+        failures,
+    )
+    require(
+        "attachGateServoIfNeeded" in servo_text,
+        f"{servo_rel} must lazily attach the GPIO 5 gate servo only when commanded",
+        failures,
+    )
 
     main_rel = "esp32控制/01_MainController/01_MainController.ino"
     main_text = read(main_rel)
