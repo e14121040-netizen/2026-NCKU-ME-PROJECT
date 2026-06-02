@@ -114,6 +114,11 @@ def main() -> int:
         failures,
     )
     require(
+        "servoTheta.attach" not in servo_setup,
+        f"{servo_rel} setup() must not attach GPIO 1 theta servo during boot",
+        failures,
+    )
+    require(
         "servoClaw.attach" not in servo_setup,
         f"{servo_rel} setup() must not attach GPIO 4 claw servo during boot",
         failures,
@@ -126,6 +131,11 @@ def main() -> int:
     require(
         "rStop()" not in servo_setup,
         f"{servo_rel} setup() must not command GPIO 0 r servo during boot",
+        failures,
+    )
+    require(
+        "servoTheta.write" not in servo_setup,
+        f"{servo_rel} setup() must not command GPIO 1 theta servo during boot",
         failures,
     )
     require(
@@ -144,6 +154,11 @@ def main() -> int:
         failures,
     )
     require(
+        "attachThetaServoIfNeeded" in servo_text,
+        f"{servo_rel} must lazily attach the GPIO 1 theta servo only when commanded",
+        failures,
+    )
+    require(
         "attachClawServoIfNeeded" in servo_text,
         f"{servo_rel} must lazily attach the GPIO 4 claw servo only when commanded",
         failures,
@@ -157,12 +172,17 @@ def main() -> int:
     require(servo_all_stop, f"{servo_rel} must define allStop()", failures)
     require(
         "detachAllServoOutputs()" in servo_all_stop,
-        f"{servo_rel} allStop() must detach GPIO 0/4/5 PWM outputs",
+        f"{servo_rel} allStop() must detach GPIO 0/1/4/5 PWM outputs",
         failures,
     )
     require(
         "detachAllServoOutputs" in servo_text and "servoR.detach()" in servo_text,
         f"{servo_rel} must detach GPIO 0 r servo output on stop",
+        failures,
+    )
+    require(
+        "servoTheta.detach()" in servo_text,
+        f"{servo_rel} must detach GPIO 1 theta servo output on stop",
         failures,
     )
     require(

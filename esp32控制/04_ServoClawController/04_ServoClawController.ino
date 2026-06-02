@@ -10,8 +10,8 @@
  *  - 控制 θ 旋轉（MG996R 180° 標準伺服）
  *  - 控制夾爪開合（MG996R 180° 標準伺服）
  *  - 控制承物盒擋板（MG996R 360° 連續旋轉舵機，定時開合）
- *  - GPIO 0/4/5 上電不輸出 PWM，收到對應指令後才啟用
- *  - STOP 時關閉 GPIO 0/4/5 PWM，避免 360° Servo 零點偏移或 180° Servo 持續吃力
+ *  - GPIO 0/1/4/5 上電不輸出 PWM，收到對應指令後才啟用
+ *  - STOP 時關閉 GPIO 0/1/4/5 PWM，避免 360° Servo 零點偏移或 180° Servo 持續吃力
  *  - 超時自動停止保護 r 齒條行程
  *  - Serial Monitor 手動測試模式
  *
@@ -83,6 +83,7 @@ Servo servoClaw;    // 180° 標準
 Servo servoGate;    // 360° 連續旋轉（擋板）
 
 bool rServoAttached = false;
+bool thetaServoAttached = false;
 bool clawServoAttached = false;
 bool gateServoAttached = false;
 
@@ -193,7 +194,24 @@ void rStop() {
 //  θ 旋轉控制（180° 標準伺服）
 // =====================================================
 
+void attachThetaServoIfNeeded() {
+  if (!thetaServoAttached) {
+    servoTheta.attach(servoTheta_Pin);
+    thetaServoAttached = true;
+    Serial.println("Theta servo PWM enabled");
+  }
+}
+
+void detachThetaServoIfNeeded() {
+  if (thetaServoAttached) {
+    servoTheta.detach();
+    thetaServoAttached = false;
+    Serial.println("Theta servo PWM disabled");
+  }
+}
+
 void thetaPos() {
+  attachThetaServoIfNeeded();
   currentThetaAngle = constrain(currentThetaAngle + THETA_STEP, THETA_MIN, THETA_MAX);
   servoTheta.write(currentThetaAngle);
   Serial.print("Theta -> ");
@@ -202,6 +220,7 @@ void thetaPos() {
 }
 
 void thetaNeg() {
+  attachThetaServoIfNeeded();
   currentThetaAngle = constrain(currentThetaAngle - THETA_STEP, THETA_MIN, THETA_MAX);
   servoTheta.write(currentThetaAngle);
   Serial.print("Theta -> ");
@@ -301,6 +320,7 @@ void startHome() {
   Serial.println("=== HOME SEQUENCE ===");
   rRetract();     // 齒條縮回
   clawOpen();     // 夾爪張開
+  attachThetaServoIfNeeded();
   currentThetaAngle = THETA_CENTER;
   servoTheta.write(currentThetaAngle);
   Serial.println("Theta -> CENTER");
@@ -313,13 +333,14 @@ void startHome() {
 // =====================================================
 void detachAllServoOutputs() {
   detachRServoIfNeeded();
+  detachThetaServoIfNeeded();
   detachClawServoIfNeeded();
   detachGateServoIfNeeded();
   rExtending = false;
   rRetracting = false;
   gateMoving = false;
   currentGateSpeed = GATE_STOP;
-  Serial.println("GPIO 0/4/5 PWM disabled");
+  Serial.println("GPIO 0/1/4/5 PWM disabled");
 }
 
 void allStop() {
@@ -402,12 +423,8 @@ void setup() {
 
 
 
-  // ----- Servo 初始化 -----
-  servoTheta.attach(servoTheta_Pin);
-
   // ----- 初始位置 -----
-  servoTheta.write(THETA_CENTER); // θ 居中
-  Serial.println("r/Claw/Gate PWM disabled on boot; waiting for command");
+  Serial.println("r/Theta/Claw/Gate PWM disabled on boot; waiting for command");
 
   // ----- ESP-NOW 初始化 -----
   WiFi.mode(WIFI_STA);
