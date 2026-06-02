@@ -109,6 +109,11 @@ def main() -> int:
     servo_setup = extract_function_body(servo_text, "setup")
     require(servo_setup, f"{servo_rel} must define setup()", failures)
     require(
+        "servoR.attach" not in servo_setup,
+        f"{servo_rel} setup() must not attach GPIO 0 r servo during boot",
+        failures,
+    )
+    require(
         "servoClaw.attach" not in servo_setup,
         f"{servo_rel} setup() must not attach GPIO 4 claw servo during boot",
         failures,
@@ -116,6 +121,11 @@ def main() -> int:
     require(
         "servoGate.attach" not in servo_setup,
         f"{servo_rel} setup() must not attach GPIO 5 gate servo during boot",
+        failures,
+    )
+    require(
+        "rStop()" not in servo_setup,
+        f"{servo_rel} setup() must not command GPIO 0 r servo during boot",
         failures,
     )
     require(
@@ -129,6 +139,11 @@ def main() -> int:
         failures,
     )
     require(
+        "attachRServoIfNeeded" in servo_text,
+        f"{servo_rel} must lazily attach the GPIO 0 r servo only when commanded",
+        failures,
+    )
+    require(
         "attachClawServoIfNeeded" in servo_text,
         f"{servo_rel} must lazily attach the GPIO 4 claw servo only when commanded",
         failures,
@@ -136,6 +151,28 @@ def main() -> int:
     require(
         "attachGateServoIfNeeded" in servo_text,
         f"{servo_rel} must lazily attach the GPIO 5 gate servo only when commanded",
+        failures,
+    )
+    servo_all_stop = extract_function_body(servo_text, "allStop")
+    require(servo_all_stop, f"{servo_rel} must define allStop()", failures)
+    require(
+        "detachAllServoOutputs()" in servo_all_stop,
+        f"{servo_rel} allStop() must detach GPIO 0/4/5 PWM outputs",
+        failures,
+    )
+    require(
+        "detachAllServoOutputs" in servo_text and "servoR.detach()" in servo_text,
+        f"{servo_rel} must detach GPIO 0 r servo output on stop",
+        failures,
+    )
+    require(
+        "servoClaw.detach()" in servo_text,
+        f"{servo_rel} must detach GPIO 4 claw servo output on stop",
+        failures,
+    )
+    require(
+        "servoGate.detach()" in servo_text,
+        f"{servo_rel} must detach GPIO 5 gate servo output on stop",
         failures,
     )
 

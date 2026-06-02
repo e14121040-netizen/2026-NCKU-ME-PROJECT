@@ -10,7 +10,8 @@
  *  - 控制 θ 旋轉（MG996R 180° 標準伺服）
  *  - 控制夾爪開合（MG996R 180° 標準伺服）
  *  - 控制承物盒擋板（MG996R 180° 標準伺服，旋轉門式）
- *  - GPIO 4/5 上電不輸出 PWM，收到夾爪 / 擋板指令後才啟用
+ *  - GPIO 0/4/5 上電不輸出 PWM，收到對應指令後才啟用
+ *  - STOP 時關閉 GPIO 0/4/5 PWM，避免 360° Servo 零點偏移或 180° Servo 持續吃力
  *  - 超時自動停止保護 r 齒條行程
  *  - Serial Monitor 手動測試模式
  *
@@ -81,6 +82,7 @@ Servo servoTheta;   // 180° 標準
 Servo servoClaw;    // 180° 標準
 Servo servoGate;    // 180° 標準（擋板）
 
+bool rServoAttached = false;
 bool clawServoAttached = false;
 bool gateServoAttached = false;
 
@@ -142,7 +144,24 @@ void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
 //  r 齒條控制（360° 連續旋轉舵機）
 // =====================================================
 
+void attachRServoIfNeeded() {
+  if (!rServoAttached) {
+    servoR.attach(servoR_Pin);
+    rServoAttached = true;
+    Serial.println("r servo PWM enabled");
+  }
+}
+
+void detachRServoIfNeeded() {
+  if (rServoAttached) {
+    servoR.detach();
+    rServoAttached = false;
+    Serial.println("r servo PWM disabled");
+  }
+}
+
 void rExtend() {
+  attachRServoIfNeeded();
   servoR.write(R_EXTEND);
   rExtending = true;
   rRetracting = false;
@@ -151,6 +170,7 @@ void rExtend() {
 }
 
 void rRetract() {
+  attachRServoIfNeeded();
   servoR.write(R_RETRACT);
   rExtending = false;
   rRetracting = true;
@@ -159,7 +179,7 @@ void rRetract() {
 }
 
 void rStop() {
-  servoR.write(R_STOP);
+  detachRServoIfNeeded();
   rExtending = false;
   rRetracting = false;
   Serial.println("r STOP");
@@ -197,6 +217,14 @@ void attachClawServoIfNeeded() {
   }
 }
 
+void detachClawServoIfNeeded() {
+  if (clawServoAttached) {
+    servoClaw.detach();
+    clawServoAttached = false;
+    Serial.println("Claw servo PWM disabled");
+  }
+}
+
 void clawOpen() {
   attachClawServoIfNeeded();
   currentClawAngle = CLAW_OPEN_ANGLE;
@@ -224,6 +252,14 @@ void attachGateServoIfNeeded() {
     servoGate.attach(servoGate_Pin);
     gateServoAttached = true;
     Serial.println("Gate servo PWM enabled");
+  }
+}
+
+void detachGateServoIfNeeded() {
+  if (gateServoAttached) {
+    servoGate.detach();
+    gateServoAttached = false;
+    Serial.println("Gate servo PWM disabled");
   }
 }
 
@@ -262,9 +298,17 @@ void startHome() {
 // =====================================================
 //  全部停止
 // =====================================================
+void detachAllServoOutputs() {
+  detachRServoIfNeeded();
+  detachClawServoIfNeeded();
+  detachGateServoIfNeeded();
+  rExtending = false;
+  rRetracting = false;
+  Serial.println("GPIO 0/4/5 PWM disabled");
+}
+
 void allStop() {
-  rStop();
-  // 180° 伺服保持目前角度，不回預設
+  detachAllServoOutputs();
   Serial.println("=== ALL STOP ===");
 }
 
@@ -337,13 +381,11 @@ void setup() {
 
 
   // ----- Servo 初始化 -----
-  servoR.attach(servoR_Pin);
   servoTheta.attach(servoTheta_Pin);
 
   // ----- 初始位置 -----
-  rStop();                        // 360° 停轉
   servoTheta.write(THETA_CENTER); // θ 居中
-  Serial.println("Claw/Gate PWM disabled on boot; waiting for command");
+  Serial.println("r/Claw/Gate PWM disabled on boot; waiting for command");
 
   // ----- ESP-NOW 初始化 -----
   WiFi.mode(WIFI_STA);
