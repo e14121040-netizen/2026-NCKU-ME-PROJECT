@@ -6,15 +6,15 @@
 =====================================================
 
  任務流程：
- 1. 等待啟動（按鈕 or 觸碰感測器）
- 2. PID 循跡沿黑線行駛
- 3. 偵測到黃色停止線 → 停車 → 啟動輸送帶將零件推落至放置區平台
- 4. 繼續循跡或返回起點
- 5. 偵測到紅色停止線 → 停車等待下一輪
+ 1. 啟動後可選擇校準循跡閾值與紅/黃標線 RGB
+ 2. PID 循跡沿黑線邊緣行駛
+ 3. 偵測到黃色標線 → 依目前圈數判斷是否停車放置零件
+ 4. 偵測到紅色標線 → 視為回到起點，等待下一輪啟動
+ 5. 四個放置區完成後結束任務
 
  感測器配置：
  - Port 1：前下顏色感測器（循跡與標線偵測）
- - Port 4：觸碰感測器（啟動/零件偵測）
+ - Port 4：觸碰感測器（校準取消/下一輪啟動）
 
  馬達配置：
  - Port A：輸送帶馬達（中馬達，驅動頂部水平輸送帶）
@@ -29,9 +29,8 @@ from pybricks.tools import wait, StopWatch
 from pybricks.robotics import DriveBase
 
 # =====================================================
-# 參數&常變數定義
+# 參數與常數定義
 # =====================================================
-#
 
 # 底盤（DriveBase 簡化直線/轉向控制）
 WHEEL_DIAMETER = 56  # mm（EV3 大輪）
@@ -48,9 +47,9 @@ MIN_SPEED = 20  # 降速後允許的最低前進速度
 MIN_SPEED_MARGIN = 7  # 保留的前進速度餘量
 
 # 放置機構參數
-HAS_PLACE_MOTOR = True  # 是否已安裝放置機構
-PLACE_ANGLE = -45  # 放置機構旋轉角度
-PLACE_SPEED = 100  # 放置機構速度 (deg/s)
+HAS_PLACE_MOTOR = True  # 是否已安裝輸送/放置機構馬達
+PLACE_ANGLE = -45  # 放置機構單次旋轉角度
+PLACE_SPEED = 100  # 放置機構轉速 (deg/s)
 PLACE_WAIT = 1500  # 放置後等待時間 (ms)
 
 # 安全參數
@@ -66,13 +65,13 @@ COLOR_DIST_THRESHOLD = 35  # RGB Manhattan 距離閾值
 COLOR_MIN_R = 15  # 最低 R 通道值
 CALIBRATION_SAMPLES = 10  # 每次校準取樣次數
 
-# 循跡閾值常變數（由 calibrate_sensors() 自動計算）
+# 循跡閾值常數（由 calibrate_sensors() 自動計算）
 LINE_THRESHOLD = 40  # 反射值低於此為黑線
 LINE_RECOVERY_MAX_ANGLE = 45  # 原地找線最大掃描角度
 LINE_RECOVERY_STEP_ANGLE = 5  # 原地找線每次旋轉角度
 LINE_RECOVERY_ERROR_TOLERANCE = 10  # 視為找回線的誤差容許值
 
-# 顏色感測常變數（由 calibrate_colors() 自動計算）
+# 顏色感測常數（由 calibrate_colors() 自動計算）
 RGB_REF_RED = (54, 8, 0)  # 紅線 RGB 參考值
 RGB_REF_YELLOW = (77, 40, 4)  # 黃線 RGB 參考值
 COLORS_CALIBRATED = False  # 是否已完成顏色校準
@@ -176,7 +175,7 @@ def show_status(*lines: str):
 
 def check_battery():
     """
-    檢測電池電量，低於警戒值則節拍提醒
+    檢測電池電量，低於警戒值則蜂鳴提醒。
 
     Returns:
         bool: True 表示電量沒有問題，False 表示電量過低
@@ -222,10 +221,10 @@ def wait_touch_press(accept: TouchSensor):
     """等待指定的感測器被按下。
 
     Args:
-        accept: 按下該按鈕時返回 True。
+        accept: 被按下時返回 True 的觸碰感測器。
 
     Returns:
-        bool: 按下 accept 時回 True
+        bool: 感測器被按下時回 True。
     """
     while True:
         if accept.pressed():
@@ -235,14 +234,14 @@ def wait_touch_press(accept: TouchSensor):
 
 
 def wait_button_or_touch_cancel(accept: Button, cancel: TouchSensor):
-    """等待指定按鈕或感測器被按下。（wait_button_press 的修改版本）
+    """等待指定按鈕或觸碰感測器被按下。
 
     Args:
         accept: 按下該按鈕時返回 True。
         cancel: 按下該感測器時返回 False。
 
     Returns:
-        bool: 按下 accept 時回 True；若設定 cancel 且按下時回 False。
+        bool: 按下 accept 時回 True；按下 cancel 感測器時回 False。
     """
     while True:
         pressed = ev3.buttons.pressed()
@@ -278,7 +277,7 @@ def rgb_multi_sampling(sensor: ColorSensor, samples=CALIBRATION_SAMPLES):
 
 def calibrate_sensors():
     """
-    啟動時校準感測器：讀取白色地板和黑線的反射值，
+    校準循跡閾值：讀取白色地板和黑線的反射值並取中間值。
     """
     global LINE_THRESHOLD
 
@@ -294,7 +293,7 @@ def calibrate_sensors():
     black_val = sensor_line.reflection()
     ev3.speaker.beep(frequency=800, duration=200)
 
-    # 取 1/2 白與 1/2 黑 作為閾值
+    # 取白色與黑色反射值的中間值作為循跡閾值
     LINE_THRESHOLD = int((white_val + black_val) / 2)
 
     show_status(
@@ -338,9 +337,9 @@ def read_line_position():
     """
     讀取感測器的反射值，計算與目標閾值的誤差。
 
-    使用右側邊緣循跡策略：
-    - 當感測器在白色區域（reflection > threshold）時，誤差為負，表示需要左轉修正
-    - 當感測器在黑色線上（reflection < threshold）時，誤差為正，表示需要右轉修正
+    誤差定義為 threshold - reflection：
+    - 感測器在白色區域（reflection > threshold）時，誤差為負
+    - 感測器在黑色線上（reflection < threshold）時，誤差為正
 
     Returns:
         tuple: (error, reflection_value)
@@ -403,8 +402,8 @@ def check_stop_color():
 
 def follow_line():
     """
-    執行一步單感測器 PID 左緣循跡。
-    若偵測到停止線，直接回傳顏色交由主程式處理，避免線條高反射率干擾了 PID。
+    執行一步單感測器 PID 邊緣循跡。
+    若偵測到停止線，直接回傳顏色交由主程式處理，避免彩色標線反射值干擾 PID。
 
     Returns:
         color: 停止線顏色，可能為 Color.YELLOW, Color.RED, 或 None
@@ -418,7 +417,7 @@ def follow_line():
     correction = pid.compute(error) * PID_OUTPUT_SCALE
     current_speed = max(MIN_SPEED, BASE_SPEED - int(abs(error) * TURN_SLOWDOWN_RATE))
 
-    # 防止卡死
+    # 限制轉向修正量，保留最低前進速度
     if correction > 0:
         correction = min(current_speed - MIN_SPEED_MARGIN, correction)
     elif correction < 0:
@@ -432,7 +431,7 @@ def follow_line():
 def place_parts():
     """
     啟動頂部輸送帶，將帶面上所有零件推落至放置區平台。
-    馬達以 PLACE_SPEED 正轉 PLACE_ANGLE 度，等待 PLACE_WAIT 秒後再轉回來。
+    馬達以 PLACE_SPEED 轉動 PLACE_ANGLE 度，等待 PLACE_WAIT 毫秒後再復位。
     """
     ev3.speaker.beep(frequency=800, duration=200)
 
@@ -450,6 +449,7 @@ def place_parts():
 
 
 def rotate_until_line(direction, max_angle=LINE_RECOVERY_MAX_ANGLE):
+    """以固定步進原地旋轉找線，找到線時回傳 True 與已轉角度。"""
     turned_angle = 0
 
     while turned_angle < max_angle:
@@ -467,6 +467,7 @@ def rotate_until_line(direction, max_angle=LINE_RECOVERY_MAX_ANGLE):
 
 
 def recover_line():
+    """停車後微調車身，嘗試回到循跡閾值附近。"""
     pid.reset()
     start_angle = robot.angle()
 
@@ -506,7 +507,7 @@ def main():
         wait(3000)
         # 低電量但仍允許啟動，只是警告
 
-    # 初始化數據
+    # 啟動前可選擇是否重新校準循跡與顏色
     show_status("Cal Line Thr & Color?", "OK: Press UP", "CANCEL: Press Touch")
     if wait_button_or_touch_cancel(Button.UP, touch_sensor):
         calibrate_sensors()
@@ -527,12 +528,14 @@ def main():
     zones_visited_current = 0  # 當前圈數造訪過的置物區數
     round_finish = 0  # 已經完成的圈數
 
-    battery_timer = StopWatch()  # 獨立電量檢查計時器
+    last_yellow_seen_ms = 0
 
-    segment_timer = StopWatch()
+    battery_timer = StopWatch()  # 電量檢查計時器
+    yellow_seen_timer = StopWatch()  # 最後見到黃線計時器
+    segment_timer = StopWatch()  # 本次循線計時器
 
     # ---- 循跡行駛 ----
-    yellow_count = 0  # 黃線連續偵測計數（防誤判）
+    yellow_count = 0  # 黃線確認計數（目前 1 次即確認）
     while True:
         show_status(
             "Running...",
@@ -553,11 +556,11 @@ def main():
                 continue
 
             yellow_count += 1
-            if yellow_count >= 1:  # 連續 1 次才確認為黃線
+            if yellow_count >= 1:  # 目前偵測到 1 次就確認為黃線
                 zones_visited_all += 1
                 zones_visited_current += 1
 
-                # 第 X 輪 -> 停在第 X 個放置區
+                # 第 X 輪只停在第 X 個放置區，其餘黃線僅記錄通過
                 if zones_visited_current != round_finish + 1:
                     continue
 
@@ -578,7 +581,7 @@ def main():
             yellow_count = 0  # 非黃色則重置計數器
 
             if stop_color == Color.RED:
-                # 回到起點
+                # 紅線代表回到起點
                 robot.stop()
 
                 # 已放置到四個放置區，結束程式
@@ -589,7 +592,7 @@ def main():
                     round_finish += 1
                     zones_visited_current = 0
 
-                # 回到起點
+                # 起點等待下一輪
                 show_status(
                     "At Start",
                     "Waiting...",
