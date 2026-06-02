@@ -212,6 +212,16 @@ def main() -> int:
         failures,
     )
     require(
+        'thetaCmd == "THETA+"' in main_text and 'thetaCmd == "THETAPLUS"' in main_text,
+        f"{main_rel} must accept Theta+ BLE text aliases",
+        failures,
+    )
+    require(
+        'thetaCmd == "THETA-"' in main_text and 'thetaCmd == "THETAMINUS"' in main_text,
+        f"{main_rel} must accept Theta- BLE text aliases",
+        failures,
+    )
+    require(
         "COMMAND_KEEPALIVE_INTERVAL_MS" in main_text,
         f"{main_rel} must send keepalive packets for sustained leg movement",
         failures,

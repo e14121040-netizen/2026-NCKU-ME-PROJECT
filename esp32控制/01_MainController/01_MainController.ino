@@ -161,6 +161,14 @@ String normalizeBleCommandText(String commandText) {
   return commandText;
 }
 
+String normalizeThetaCommandText(String commandText) {
+  commandText.trim();
+  commandText.toUpperCase();
+  commandText.replace(" ", "");
+  commandText.replace("_", "");
+  return commandText;
+}
+
 void queueLegCommand(uint8_t cmd, uint8_t spd) {
   legCommand = cmd;
   legSpeed = spd;
@@ -425,6 +433,7 @@ void handleBleCommand(String commandText) {
   String upperCmd = commandText;
   upperCmd.toUpperCase();
   String normalizedCmd = normalizeBleCommandText(commandText);
+  String thetaCmd = normalizeThetaCommandText(commandText);
 
   if (normalizedCmd == "FORWARD") {
     queueLegCommand(CMD_FORWARD, legFullSpeed());
@@ -462,6 +471,16 @@ void handleBleCommand(String commandText) {
   } else if (normalizedCmd == "RETRACT") {
     queueServoCommand(CMD_R_RETRACT, 0);
     notifyBle("CMD: R RETRACT");
+  } else if (thetaCmd == "THETA+" || thetaCmd == "THETAPLUS" ||
+             thetaCmd == "THETAPOS" || thetaCmd == "THETAPOSITIVE" ||
+             thetaCmd == "T+") {
+    queueServoCommand(CMD_THETA_POS, 0);
+    notifyBle("CMD: THETA+");
+  } else if (thetaCmd == "THETA-" || thetaCmd == "THETAMINUS" ||
+             thetaCmd == "THETANEG" || thetaCmd == "THETANEGATIVE" ||
+             thetaCmd == "T-") {
+    queueServoCommand(CMD_THETA_NEG, 0);
+    notifyBle("CMD: THETA-");
   } else if (normalizedCmd == "OPEN") {
     queueServoCommand(CMD_CLAW_OPEN, 0);
     notifyBle("CMD: CLAW OPEN");
