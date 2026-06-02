@@ -175,11 +175,42 @@ def main() -> int:
         f"{servo_rel} must detach GPIO 5 gate servo output on stop",
         failures,
     )
+    require(
+        "GATE_OPEN_SPEED" in servo_text and "GATE_CLOSE_SPEED" in servo_text,
+        f"{servo_rel} must treat the gate servo as timed 360-degree motion",
+        failures,
+    )
+    require("GATE_STOP" in servo_text, f"{servo_rel} must define a gate servo stop pulse", failures)
+    require(
+        "GATE_RUN_TIME_MS" in servo_text,
+        f"{servo_rel} must auto-stop timed gate motion",
+        failures,
+    )
+    require(
+        "checkGateTimeout" in servo_text,
+        f"{servo_rel} must check and stop timed gate motion in loop()",
+        failures,
+    )
 
     main_rel = "esp32控制/01_MainController/01_MainController.ino"
     main_text = read(main_rel)
     for token in ("LEGSTOP", "TZSTOP", "SERVOSTOP", "SPD:", "GATEOPEN", "GATECLOSE"):
         require(token in main_text, f"{main_rel} must support {token}", failures)
+    require(
+        "normalizeBleCommandText" in main_text,
+        f"{main_rel} must normalize BLE commands before matching text aliases",
+        failures,
+    )
+    require(
+        'normalizedCmd == "GATEOPEN"' in main_text,
+        f"{main_rel} must accept spaced/underscored Gate Open BLE aliases",
+        failures,
+    )
+    require(
+        'normalizedCmd == "GATECLOSE"' in main_text,
+        f"{main_rel} must accept spaced/underscored Gate Close BLE aliases",
+        failures,
+    )
     require(
         "COMMAND_KEEPALIVE_INTERVAL_MS" in main_text,
         f"{main_rel} must send keepalive packets for sustained leg movement",

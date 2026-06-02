@@ -152,6 +152,15 @@ bool isLegMotionCommand(uint8_t cmd) {
          cmd == CMD_SPIN_LEFT || cmd == CMD_SPIN_RIGHT;
 }
 
+String normalizeBleCommandText(String commandText) {
+  commandText.trim();
+  commandText.toUpperCase();
+  commandText.replace(" ", "");
+  commandText.replace("_", "");
+  commandText.replace("-", "");
+  return commandText;
+}
+
 void queueLegCommand(uint8_t cmd, uint8_t spd) {
   legCommand = cmd;
   legSpeed = spd;
@@ -415,62 +424,63 @@ void handleBleCommand(String commandText) {
 
   String upperCmd = commandText;
   upperCmd.toUpperCase();
+  String normalizedCmd = normalizeBleCommandText(commandText);
 
-  if (upperCmd == "FORWARD") {
+  if (normalizedCmd == "FORWARD") {
     queueLegCommand(CMD_FORWARD, legFullSpeed());
     notifyBle("CMD: FORWARD");
-  } else if (upperCmd == "BACKWARD") {
+  } else if (normalizedCmd == "BACKWARD") {
     queueLegCommand(CMD_BACKWARD, legFullSpeed());
     notifyBle("CMD: BACKWARD");
-  } else if (upperCmd == "LEFT" || upperCmd == "QL" || upperCmd == "SPINL") {
+  } else if (normalizedCmd == "LEFT" || normalizedCmd == "QL" || normalizedCmd == "SPINL") {
     queueLegCommand(CMD_SPIN_LEFT, legFullSpeed());
     notifyBle("CMD: SPIN LEFT");
-  } else if (upperCmd == "RIGHT" || upperCmd == "ER" || upperCmd == "SPINR") {
+  } else if (normalizedCmd == "RIGHT" || normalizedCmd == "ER" || normalizedCmd == "SPINR") {
     queueLegCommand(CMD_SPIN_RIGHT, legFullSpeed());
     notifyBle("CMD: SPIN RIGHT");
-  } else if (upperCmd == "LEGSTOP") {
+  } else if (normalizedCmd == "LEGSTOP") {
     queueLegCommand(CMD_LEG_STOP, 0);
     notifyBle("CMD: LEG STOP");
-  } else if (upperCmd == "TL" || upperCmd == "TURNTABLELEFT") {
+  } else if (normalizedCmd == "TL" || normalizedCmd == "TURNTABLELEFT") {
     queueTZCommand(CMD_TURNTABLE_LEFT, FULL_SPEED);
     notifyBle("CMD: TURNTABLE LEFT");
-  } else if (upperCmd == "TR" || upperCmd == "TURNTABLERIGHT") {
+  } else if (normalizedCmd == "TR" || normalizedCmd == "TURNTABLERIGHT") {
     queueTZCommand(CMD_TURNTABLE_RIGHT, FULL_SPEED);
     notifyBle("CMD: TURNTABLE RIGHT");
-  } else if (upperCmd == "UP" || upperCmd == "ZU") {
+  } else if (normalizedCmd == "UP" || normalizedCmd == "ZU") {
     queueTZCommand(CMD_Z_UP, FULL_SPEED);
     notifyBle("CMD: Z UP");
-  } else if (upperCmd == "DOWN" || upperCmd == "ZD") {
+  } else if (normalizedCmd == "DOWN" || normalizedCmd == "ZD") {
     queueTZCommand(CMD_Z_DOWN, FULL_SPEED);
     notifyBle("CMD: Z DOWN");
-  } else if (upperCmd == "TZSTOP") {
+  } else if (normalizedCmd == "TZSTOP") {
     queueTZCommand(CMD_TZ_STOP, 0);
     notifyBle("CMD: TZ STOP");
-  } else if (upperCmd == "EXTEND") {
+  } else if (normalizedCmd == "EXTEND") {
     queueServoCommand(CMD_R_EXTEND, 0);
     notifyBle("CMD: R EXTEND");
-  } else if (upperCmd == "RETRACT") {
+  } else if (normalizedCmd == "RETRACT") {
     queueServoCommand(CMD_R_RETRACT, 0);
     notifyBle("CMD: R RETRACT");
-  } else if (upperCmd == "OPEN") {
+  } else if (normalizedCmd == "OPEN") {
     queueServoCommand(CMD_CLAW_OPEN, 0);
     notifyBle("CMD: CLAW OPEN");
-  } else if (upperCmd == "CLOSE") {
+  } else if (normalizedCmd == "CLOSE") {
     queueServoCommand(CMD_CLAW_CLOSE, 0);
     notifyBle("CMD: CLAW CLOSE");
-  } else if (upperCmd == "HOME") {
+  } else if (normalizedCmd == "HOME") {
     queueServoCommand(CMD_SERVO_HOME, 0);
     notifyBle("CMD: HOME");
-  } else if (upperCmd == "GATEOPEN" || upperCmd == "GO") {
+  } else if (normalizedCmd == "GATEOPEN" || normalizedCmd == "GO") {
     queueServoCommand(CMD_GATE_OPEN, 0);
     notifyBle("CMD: GATE OPEN");
-  } else if (upperCmd == "GATECLOSE" || upperCmd == "GC") {
+  } else if (normalizedCmd == "GATECLOSE" || normalizedCmd == "GC") {
     queueServoCommand(CMD_GATE_CLOSE, 0);
     notifyBle("CMD: GATE CLOSE");
-  } else if (upperCmd == "SERVOSTOP") {
+  } else if (normalizedCmd == "SERVOSTOP") {
     queueServoCommand(CMD_SERVO_STOP, 0);
     notifyBle("CMD: SERVO STOP");
-  } else if (upperCmd == "STOP" || upperCmd == "ALLSTOP") {
+  } else if (normalizedCmd == "STOP" || normalizedCmd == "ALLSTOP") {
     queueAllStop();
     notifyBle("CMD: ALL STOP");
   } else if (upperCmd.startsWith("SPD:") || upperCmd.startsWith("SPEED:")) {

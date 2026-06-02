@@ -9,7 +9,7 @@
  *  - 控制 r 齒條伸縮（MG996R 360° 連續旋轉舵機）
  *  - 控制 θ 旋轉（MG996R 180° 標準伺服）
  *  - 控制夾爪開合（MG996R 180° 標準伺服）
- *  - 控制承物盒擋板（MG996R 180° 標準伺服，旋轉門式）
+ *  - 控制承物盒擋板（MG996R 360° 連續旋轉舵機，定時開合）
  *  - GPIO 0/4/5 上電不輸出 PWM，收到對應指令後才啟用
  *  - STOP 時關閉 GPIO 0/4/5 PWM，避免 360° Servo 零點偏移或 180° Servo 持續吃力
  *  - 超時自動停止保護 r 齒條行程
@@ -19,7 +19,7 @@
  *  - MG996R 360°（GPIO 0）：r 齒條伸縮，人眼判斷位置
  *  - MG996R 180°（GPIO 1）：θ 旋轉
  *  - MG996R 180°（GPIO 4）：夾爪開合
- *  - MG996R 180°（GPIO 5）：承物盒擋板（旋轉門式）
+ *  - MG996R 360°（GPIO 5）：承物盒擋板（旋轉門式，定時開合）
  *
  *  指令協議（ESP-NOW 接收 / Serial 手動測試）：
  *    CMD_SERVO_STOP = 0  → 全部停止（360° 停轉，180° 保持）
@@ -47,7 +47,7 @@
  *  GPIO 0 (PWM)  -> MG996R 360°（r 齒條伸縮）── 信號線
  *  GPIO 1 (PWM)  -> MG996R 180°（θ 旋轉）── 信號線
  *  GPIO 4 (PWM)  -> MG996R 180°（夾爪開合）── 信號線
- *  GPIO 5 (PWM)  -> MG996R 180°（承物盒擋板）── 信號線
+ *  GPIO 5 (PWM)  -> MG996R 360°（承物盒擋板）── 信號線
  *
 
  *
@@ -80,7 +80,7 @@ const int servoGate_Pin  = 5;   // MG996R 180° — 承物盒擋板
 Servo servoR;       // 360° 連續旋轉
 Servo servoTheta;   // 180° 標準
 Servo servoClaw;    // 180° 標準
-Servo servoGate;    // 180° 標準（擋板）
+Servo servoGate;    // 360° 連續旋轉（擋板）
 
 bool rServoAttached = false;
 bool clawServoAttached = false;
@@ -107,23 +107,27 @@ const int THETA_STEP    = 15;   // 每次旋轉步進角度
 const int CLAW_OPEN_ANGLE  = 180;  // 夾爪張開角度（需實測調整）
 const int CLAW_CLOSE_ANGLE = 0;    // 夾爪閉合角度（需實測調整）
 
-// --- 180° 標準伺服 (承物盒擋板) ---
-const int GATE_OPEN_ANGLE  = 90;   // 擋板打開角度（需實測調整）
-const int GATE_CLOSE_ANGLE = 0;    // 擋板關閉角度（需實測調整）
+// --- 360° 連續旋轉舵機 (承物盒擋板) ---
+const int GATE_STOP        = 90;    // 停止
+const int GATE_OPEN_SPEED  = 180;   // 正轉開啟（需依實際方向調整）
+const int GATE_CLOSE_SPEED = 0;     // 反轉關閉（需依實際方向調整）
+const unsigned long GATE_RUN_TIME_MS = 700;  // 擋板單次開合運轉時間
 
 int currentThetaAngle = THETA_CENTER;
 int currentClawAngle  = CLAW_OPEN_ANGLE;
-int currentGateAngle  = GATE_CLOSE_ANGLE;
+int currentGateSpeed  = GATE_STOP;
 
 // =====================================================
 //  r 齒條運行狀態（用於超時保護檢測）
 // =====================================================
 bool rExtending = false;   // 正在伸出
 bool rRetracting = false;  // 正在縮回
+bool gateMoving = false;   // 擋板正在定時轉動
 
 // 安全保護：r 齒條最大運行時間
 const unsigned long R_MAX_RUN_TIME = 5000;  // 5 秒
 unsigned long rStartTime = 0;
+unsigned long gateStartTime = 0;
 
 // =====================================================
 //  ESP-NOW 回調：接收到資料時觸發
@@ -244,7 +248,7 @@ void clawClose() {
 }
 
 // =====================================================
-//  承物盒擋板控制（180° 標準伺服，旋轉門式）
+//  承物盒擋板控制（360° 連續旋轉舵機，定時開合）
 // =====================================================
 
 void attachGateServoIfNeeded() {
@@ -263,22 +267,31 @@ void detachGateServoIfNeeded() {
   }
 }
 
-void gateOpen() {
+void gateStop() {
+  detachGateServoIfNeeded();
+  currentGateSpeed = GATE_STOP;
+  gateMoving = false;
+  Serial.println("Gate STOP");
+}
+
+void startGateMotion(int speed, const char *label) {
   attachGateServoIfNeeded();
-  currentGateAngle = GATE_OPEN_ANGLE;
-  servoGate.write(currentGateAngle);
-  Serial.print("Gate OPEN -> ");
-  Serial.print(currentGateAngle);
-  Serial.println("°");
+  currentGateSpeed = speed;
+  servoGate.write(currentGateSpeed);
+  gateMoving = true;
+  gateStartTime = millis();
+  Serial.print("Gate ");
+  Serial.print(label);
+  Serial.print(" -> speed pulse ");
+  Serial.println(currentGateSpeed);
+}
+
+void gateOpen() {
+  startGateMotion(GATE_OPEN_SPEED, "OPEN");
 }
 
 void gateClose() {
-  attachGateServoIfNeeded();
-  currentGateAngle = GATE_CLOSE_ANGLE;
-  servoGate.write(currentGateAngle);
-  Serial.print("Gate CLOSE -> ");
-  Serial.print(currentGateAngle);
-  Serial.println("°");
+  startGateMotion(GATE_CLOSE_SPEED, "CLOSE");
 }
 
 // =====================================================
@@ -304,6 +317,8 @@ void detachAllServoOutputs() {
   detachGateServoIfNeeded();
   rExtending = false;
   rRetracting = false;
+  gateMoving = false;
+  currentGateSpeed = GATE_STOP;
   Serial.println("GPIO 0/4/5 PWM disabled");
 }
 
@@ -319,6 +334,13 @@ void checkRTimeout() {
   if ((rExtending || rRetracting) && (millis() - rStartTime > R_MAX_RUN_TIME)) {
     Serial.println("!! r TIMEOUT -> Safety STOP");
     rStop();
+  }
+}
+
+void checkGateTimeout() {
+  if (gateMoving && (millis() - gateStartTime > GATE_RUN_TIME_MS)) {
+    Serial.println("Gate timed motion complete -> STOP");
+    gateStop();
   }
 }
 
@@ -421,8 +443,8 @@ void setup() {
   Serial.println(currentThetaAngle);
   Serial.print("Claw angle: ");
   Serial.println(currentClawAngle);
-  Serial.print("Gate angle: ");
-  Serial.println(currentGateAngle);
+  Serial.print("Gate speed pulse: ");
+  Serial.println(currentGateSpeed);
   Serial.println();
 }
 
@@ -432,6 +454,7 @@ void setup() {
 void loop() {
   // ----- 安全保護 -----
   checkRTimeout();
+  checkGateTimeout();
 
 
   // ----- 處理 ESP-NOW 接收的指令 -----
@@ -487,9 +510,8 @@ void loop() {
         Serial.print("  Claw angle: ");
         Serial.print(currentClawAngle);
         Serial.println("°");
-        Serial.print("  Gate angle: ");
-        Serial.print(currentGateAngle);
-        Serial.println("°");
+        Serial.print("  Gate speed pulse: ");
+        Serial.println(currentGateSpeed);
 
         Serial.println("--------------");
         break;
