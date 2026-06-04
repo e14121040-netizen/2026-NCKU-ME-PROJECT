@@ -34,7 +34,7 @@ const unsigned long COMMAND_KEEPALIVE_INTERVAL_MS = 250;
 //  ⚠ 將 0xFF 佔位符替換為實際 MAC 地址
 // =====================================================
 uint8_t Leg_Address[] = {0x58, 0x8C, 0x81, 0x9D, 0xF6, 0x90};       // C3 #1 腿部
-uint8_t turntableZ_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // C3 #2 大圓盤+z
+uint8_t turntableZ_Address[] = {0x10, 0xB4, 0x1D, 0x1C, 0xD1, 0x28};  // C3 #2 大圓盤+z
 uint8_t servoClaw_Address[] = {0x58, 0x8C, 0x81, 0xA1, 0x30, 0xD0};   // C3 #3 Servo
 
 static const char *BLE_DEVICE_NAME = "ESP32_MainController";
