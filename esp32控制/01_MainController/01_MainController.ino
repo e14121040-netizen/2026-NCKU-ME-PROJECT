@@ -363,6 +363,11 @@ void processSingleChar(char c) {
       queueServoCommand(CMD_R_RETRACT, 0);
       notifyBle("CMD: r Retract");
       break;
+    case 'x':
+    case 'X':
+      queueServoCommand(CMD_R_STOP, 0);
+      notifyBle("CMD: r STOP");
+      break;
     case 'i':
     case 'I':
       queueServoCommand(CMD_THETA_POS, 0);
@@ -471,6 +476,9 @@ void handleBleCommand(String commandText) {
   } else if (normalizedCmd == "RETRACT") {
     queueServoCommand(CMD_R_RETRACT, 0);
     notifyBle("CMD: R RETRACT");
+  } else if (normalizedCmd == "RSTOP") {
+    queueServoCommand(CMD_R_STOP, 0);
+    notifyBle("CMD: R STOP");
   } else if (thetaCmd == "THETA+" || thetaCmd == "THETAPLUS" ||
              thetaCmd == "THETAPOS" || thetaCmd == "THETAPOSITIVE" ||
              thetaCmd == "T+") {
@@ -668,12 +676,12 @@ void setup() {
   Serial.println("--- Command Reference ---");
   Serial.println(" Leg move:   f/b/l/r/q/e  | half: F/B/L/R");
   Serial.println(" Turntable:  a=left d=right  u=up j=down");
-  Serial.println(" Servo:      w/s/i/k/o/p/g/n/h");
+  Serial.println(" Servo:      w/s/x/i/k/o/p/g/n/h");
   Serial.println(" Split stop: 1=LEGSTOP 2=TZSTOP 3=SERVOSTOP");
   Serial.println(" All stop:   0=STOP ALL");
   Serial.println(" BLE text:   FORWARD BACKWARD LEFT RIGHT LEGSTOP");
   Serial.println("             TL TR UP DOWN TZSTOP");
-  Serial.println("             EXTEND RETRACT OPEN CLOSE HOME");
+  Serial.println("             EXTEND RETRACT RSTOP OPEN CLOSE HOME");
   Serial.println("             GATEOPEN GATECLOSE SERVOSTOP STOP");
   Serial.println("             SPD:150");
   Serial.println("-------------------------");

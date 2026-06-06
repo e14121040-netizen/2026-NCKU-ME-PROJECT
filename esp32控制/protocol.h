@@ -85,15 +85,16 @@ typedef struct turntable_z_now_message {
 // =====================================================
 enum ServoClawCommand {
   CMD_SERVO_STOP = 0,
-  CMD_R_EXTEND,        // 1 - r 齒條伸出（360° Servo 正轉）
-  CMD_R_RETRACT,       // 2 - r 齒條縮回（360° Servo 反轉）
-  CMD_THETA_POS,       // 3 - θ 旋轉（正方向）
-  CMD_THETA_NEG,       // 4 - θ 旋轉（反方向）
-  CMD_CLAW_OPEN,       // 5 - 夾爪張開
-  CMD_CLAW_CLOSE,      // 6 - 夾爪閉合
-  CMD_SERVO_HOME,      // 7 - 歸位（r 縮回 + 夾爪張開 + 擋板關閉）
-  CMD_GATE_OPEN,       // 8 - 承物盒擋板打開
-  CMD_GATE_CLOSE,      // 9 - 承物盒擋板關閉
+  CMD_R_EXTEND = 1,    // 1 - r 齒條伸出（360° Servo 正轉）
+  CMD_R_RETRACT = 2,   // 2 - r 齒條縮回（360° Servo 反轉）
+  CMD_THETA_POS = 3,   // 3 - θ 旋轉（正方向）
+  CMD_THETA_NEG = 4,   // 4 - θ 旋轉（反方向）
+  CMD_CLAW_OPEN = 5,   // 5 - 夾爪張開
+  CMD_CLAW_CLOSE = 6,  // 6 - 夾爪閉合
+  CMD_SERVO_HOME = 7,  // 7 - 歸位（r 縮回 + 夾爪張開 + 擋板關閉）
+  CMD_GATE_OPEN = 8,   // 8 - 承物盒擋板打開
+  CMD_GATE_CLOSE = 9,  // 9 - 承物盒擋板關閉
+  CMD_R_STOP = 10,     // 10 - 只停止 r 齒條（不影響 θ / 夾爪 / 擋板）
 };
 
 typedef struct servo_claw_now_message {

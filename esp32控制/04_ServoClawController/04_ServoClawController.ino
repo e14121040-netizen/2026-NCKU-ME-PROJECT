@@ -32,9 +32,10 @@
  *    CMD_SERVO_HOME = 7  → 歸位（r 縮回 + 夾爪張開 + 擋板關閉）
  *    CMD_GATE_OPEN  = 8  → 承物盒擋板打開
  *    CMD_GATE_CLOSE = 9  → 承物盒擋板關閉
+ *    CMD_R_STOP     = 10 → 只停止 r 齒條
  *
  *  Serial 快捷鍵：
- *    'w' = r 伸出       's' = r 縮回
+ *    'w' = r 伸出       's' = r 縮回       'x' = r 停止
  *    'i' = θ 正轉       'k' = θ 反轉
  *    'o' = 夾爪張開      'p' = 夾爪閉合
  *    'g' = 擋板打開      'n' = 擋板關閉
@@ -381,6 +382,9 @@ void executeCommand(uint8_t cmd, uint8_t spd) {
     case CMD_R_RETRACT:
       rRetract();
       break;
+    case CMD_R_STOP:
+      rStop();
+      break;
     case CMD_THETA_POS:
       thetaPos();
       break;
@@ -449,7 +453,7 @@ void setup() {
   // ----- 印出使用說明 -----
   Serial.println();
   Serial.println("--- Serial Test Commands ---");
-  Serial.println("  w = r Extend    s = r Retract");
+  Serial.println("  w = r Extend    s = r Retract   x = r STOP");
   Serial.println("  i = Theta (+)   k = Theta (-)");
   Serial.println("  o = Claw Open   p = Claw Close");
   Serial.println("  g = Gate Open   n = Gate Close");
@@ -490,6 +494,9 @@ void loop() {
         break;
       case 's':
         executeCommand(CMD_R_RETRACT, 0);
+        break;
+      case 'x':
+        executeCommand(CMD_R_STOP, 0);
         break;
       case 'i':
         executeCommand(CMD_THETA_POS, 0);

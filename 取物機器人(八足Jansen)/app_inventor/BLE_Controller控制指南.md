@@ -39,6 +39,7 @@
 |---------|---------|
 | Extend | `EXTEND` |
 | Retract | `RETRACT` |
+| R Stop | `RSTOP` |
 | Theta+ | `i` |
 | Theta- | `k` |
 | Claw Open | `OPEN` |
@@ -59,6 +60,7 @@
 1. 每個區域都要有自己的停止鍵：
    - `LEGSTOP`
    - `TZSTOP`
+   - `RSTOP`
    - `SERVOSTOP`
 2. 全域急停 `STOP` 必須做成最大顆、最容易按到的紅色按鈕。
 3. `STOP` 只用於緊急狀況或整體結束，不拿來取代各區停止鍵。

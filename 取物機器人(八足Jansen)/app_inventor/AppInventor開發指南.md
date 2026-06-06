@@ -29,13 +29,14 @@
 2. 正式命令以文字命令為主：
    - 腿部：`FORWARD` / `BACKWARD` / `LEFT` / `RIGHT` / `LEGSTOP`
    - 大圓盤與 z：`TL` / `TR` / `UP` / `DOWN` / `TZSTOP`
-   - Servo / 夾爪：`EXTEND` / `RETRACT` / `OPEN` / `CLOSE` / `HOME` / `GATEOPEN` / `GATECLOSE` / `SERVOSTOP`
+   - Servo / 夾爪：`EXTEND` / `RETRACT` / `RSTOP` / `OPEN` / `CLOSE` / `HOME` / `GATEOPEN` / `GATECLOSE` / `SERVOSTOP`
    - 全域急停：`STOP`
 3. 備用 App 也必須沿用正式裝置名稱 `ESP32_MainController`。
 4. 不要再把「鬆手就送 `0`」當成主要停止策略。
    現行架構使用：
    - `LEGSTOP`
    - `TZSTOP`
+   - `RSTOP`
    - `SERVOSTOP`
    - `STOP`
 

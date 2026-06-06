@@ -95,6 +95,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32c3 04_ServoClawController/
 |------|------|
 | `EXTEND` | r 齒條伸出 |
 | `RETRACT` | r 齒條縮回 |
+| `RSTOP` | 只停止 r 齒條 |
 | `OPEN` | 夾爪張開 |
 | `CLOSE` | 夾爪閉合 |
 | `HOME` | 歸位 |
@@ -148,7 +149,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32c3 04_ServoClawController/
 3. 最後再用 **BLE Controller – Arduino ESP32** 測試：
    - `FORWARD` → `LEGSTOP`
    - `TL` → `TZSTOP`
-   - `EXTEND` → `SERVOSTOP`
+   - `EXTEND` → `RSTOP`
    - `STOP`
 
 ## 供電提醒

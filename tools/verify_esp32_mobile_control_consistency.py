@@ -17,7 +17,7 @@ def require(condition: bool, message: str, failures: list[str]) -> None:
 
 
 def extract_function_body(text: str, function_name: str) -> str:
-    signature = f"void {function_name}()"
+    signature = f"void {function_name}("
     signature_index = text.find(signature)
     if signature_index == -1:
         return ""
@@ -66,6 +66,11 @@ def main() -> int:
     require(
         "CMD_SERVO_STOP_ONLY" in protocol_text,
         f"{protocol_rel} must define split stop commands",
+        failures,
+    )
+    require(
+        "CMD_R_STOP" in protocol_text,
+        f"{protocol_rel} must define a r-only stop command",
         failures,
     )
 
@@ -211,10 +216,17 @@ def main() -> int:
         f"{servo_rel} must check and stop timed gate motion in loop()",
         failures,
     )
+    servo_execute = extract_function_body(servo_text, "executeCommand")
+    require(servo_execute, f"{servo_rel} must define executeCommand()", failures)
+    require(
+        "case CMD_R_STOP:" in servo_execute and "rStop();" in servo_execute,
+        f"{servo_rel} must route CMD_R_STOP to rStop() only",
+        failures,
+    )
 
     main_rel = "esp32控制/01_MainController/01_MainController.ino"
     main_text = read(main_rel)
-    for token in ("LEGSTOP", "TZSTOP", "SERVOSTOP", "SPD:", "GATEOPEN", "GATECLOSE"):
+    for token in ("LEGSTOP", "TZSTOP", "SERVOSTOP", "RSTOP", "SPD:", "GATEOPEN", "GATECLOSE"):
         require(token in main_text, f"{main_rel} must support {token}", failures)
     require(
         "normalizeBleCommandText" in main_text,
@@ -229,6 +241,11 @@ def main() -> int:
     require(
         'normalizedCmd == "GATECLOSE"' in main_text,
         f"{main_rel} must accept spaced/underscored Gate Close BLE aliases",
+        failures,
+    )
+    require(
+        'normalizedCmd == "RSTOP"' in main_text and "CMD_R_STOP" in main_text,
+        f"{main_rel} must accept RSTOP as a r-only ServoClaw stop command",
         failures,
     )
     require(
@@ -249,8 +266,8 @@ def main() -> int:
     require("case 'I':" in main_text, f"{main_rel} must accept uppercase I for Theta+", failures)
     require("case 'K':" in main_text, f"{main_rel} must accept uppercase K for Theta-", failures)
     require(
-        "uint8_t turntableZ_Address[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}" in main_text,
-        f"{main_rel} must keep C3 #2 MAC as placeholder until measured",
+        "uint8_t turntableZ_Address[] = {0x10, 0xB4, 0x1D, 0x1C, 0xD1, 0x28}" in main_text,
+        f"{main_rel} must keep the measured C3 #2 MAC address",
         failures,
     )
 
@@ -276,7 +293,7 @@ def main() -> int:
 
     official_app_doc_rel = "取物機器人(八足Jansen)/app_inventor/App指令對照表.md"
     official_app_doc = read(official_app_doc_rel)
-    for token in ("LEGSTOP", "TZSTOP", "SERVOSTOP", "STOP"):
+    for token in ("LEGSTOP", "TZSTOP", "SERVOSTOP", "RSTOP", "STOP"):
         require(token in official_app_doc, f"{official_app_doc_rel} must document {token}", failures)
     require("TouchUp" not in official_app_doc, f"{official_app_doc_rel} must not teach TouchUp stop flow", failures)
     require("PickupRobot" not in official_app_doc, f"{official_app_doc_rel} must not use PickupRobot", failures)
@@ -300,7 +317,7 @@ def main() -> int:
     require((ROOT / ble_guide_rel).exists(), f"{ble_guide_rel} must exist", failures)
     if (ROOT / ble_guide_rel).exists():
         ble_guide_text = read(ble_guide_rel)
-        for token in ("BLE Controller – Arduino ESP32", "LEGSTOP", "TZSTOP", "SERVOSTOP", "STOP"):
+        for token in ("BLE Controller – Arduino ESP32", "LEGSTOP", "TZSTOP", "SERVOSTOP", "RSTOP", "STOP"):
             require(token in ble_guide_text, f"{ble_guide_rel} must document {token}", failures)
 
     root_readme = read("README.md")

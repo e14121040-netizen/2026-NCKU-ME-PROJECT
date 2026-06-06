@@ -37,6 +37,7 @@
 |---------|---------|------|
 | Extend | `EXTEND` | r 齒條伸出 |
 | Retract | `RETRACT` | r 齒條縮回 |
+| R Stop | `RSTOP` | 只停止 r 齒條 |
 | Theta+ | `I` 或 `i` | θ 正向步進 |
 | Theta- | `K` 或 `k` | θ 反向步進 |
 | Claw Open | `OPEN` | 夾爪張開 |
@@ -57,6 +58,7 @@
 1. 每個持續動作區域都放自己的停止鍵：
    - 腿部區放 `LEGSTOP`
    - 大圓盤 / z 區放 `TZSTOP`
+   - r 齒條按住放開送 `RSTOP`
    - Servo 區放 `SERVOSTOP`
 2. 另外保留一顆大顆紅色按鈕送 `STOP`，作為全域急停。
 3. `SPD:xxx` 建議放到進階頁或小按鈕列，不和主控制區混在一起。
