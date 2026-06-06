@@ -194,8 +194,8 @@
 
 ```
 C3 #1 (Leg):        __:__:__:__:__:__
-C3 #2 (TurntableZ): __:__:__:__:__:__
-C3 #3 (ServoClaw):  __:__:__:__:__:__
+C3 #2 (RotatingArm): __:__:__:__:__:__
+C3 #3 (FixedStage):  __:__:__:__:__:__
 ```
 
 ---
@@ -246,15 +246,14 @@ BTS7960 #2 M+ / M- → JGB37-555 DC 12V 66rpm 右腿馬達
 
 ---
 
-### Step 8：C3 #2 大圓盤 + z 接線
+### Step 8：C3 #2 RotatingArm 接線
 
 **接線**（參考 [接線圖.md](接線圖.md)）：
 ```
-【BTS7960 #3 — 大圓盤馬達】
-C3 #2 GPIO 0 → BTS7960 #3 RPWM（正轉 PWM）
-C3 #2 GPIO 1 → BTS7960 #3 LPWM（反轉 PWM）
-BTS7960 #3 R_EN → 3.3V（常開）
-BTS7960 #3 L_EN → 3.3V（常開）
+【旋轉端 Servo ×3】
+C3 #2 GPIO 0 → MG996R 360°（r 齒條）信號線
+C3 #2 GPIO 1 → MG996R 180°（θ 旋轉）信號線
+C3 #2 GPIO 5 → MG996R 180°（夾爪開合）信號線
 
 【BTS7960 #4 — z 升降】
 C3 #2 GPIO 3 → BTS7960 #4 RPWM（上升 PWM）
@@ -262,68 +261,65 @@ C3 #2 GPIO 4 → BTS7960 #4 LPWM（下降 PWM）
 BTS7960 #4 R_EN → 3.3V（常開）
 BTS7960 #4 L_EN → 3.3V（常開）
 
-C3 #2 GND    → BTS7960 #3 / #4 GND（共地）
+C3 #2 GND    → XL4015 / BTS7960 #4 / 其他機構 GND（共地）
 ```
 
-
+> C3 #2 與上方 Servo ×3、BTS7960 #4、z 馬達一起放旋轉端。跨旋轉中心的供電線要預留鬆弛線圈。
 
 **測試**：
-1. 上傳 `03_TurntableZController.ino` 至 C3 #2
-2. Serial 輸入 `a` → 大圓盤左轉
-3. Serial 輸入 `u` → z 上升
+1. 上傳 `03_RotatingArmController.ino` 至 C3 #2
+2. Serial 輸入 `w` / `s` / `x` → r 齒條伸縮與停止
+3. Serial 輸入 `i` / `k` → θ 旋轉
+4. Serial 輸入 `o` / `p` → 夾爪開合
+5. Serial 輸入 `u` / `j` → z 升降
 4. Serial 輸入 `?` → 查看狀態
 
 **驗證**：
-- [ ] 大圓盤左/右轉正常（BTS7960 #3 驅動）
+- [ ] r 齒條、θ、夾爪均正常
 - [ ] z 升降正常（BTS7960 #4 驅動）
 - [ ] 超時保護有效（持續運轉 5 秒後自動停止）
-- [ ] 超時保護有效（持續運轉 5 秒後自動停止）
+- [ ] 線束走旋轉中心且有鬆弛線圈
 
 ---
 
-### Step 9：C3 #3 Servo 接線
+### Step 9：C3 #3 FixedStage 接線
 
-**Servo 電源接線**（注意：從 XL4015 取電，不是從 C3）：
+**Gate Servo 電源接線**（注意：從 XL4015 取電，不是從 C3）：
 ```
-XL4015 5V OUT → MG996R ×4 的 V+（紅線）
-XL4015 GND   → MG996R ×4 的 GND（棕線）── 同時接 C3 #3 GND
+XL4015 5V OUT → Gate servo V+（紅線）
+XL4015 GND   → Gate servo GND（棕線）── 同時接 C3 #3 GND
 ```
 
 若 Servo 採獨立電池供電，仍要保持：
 ```
-Servo 電池 / XL4015 OUT- / Servo GND / C3 #3 GND → 共地
+Servo 電池 / XL4015 OUT- / Gate servo GND / C3 #3 GND → 共地
 ```
 
-**Servo 信號線**：
+**固定端 spin 與 Gate 信號線**：
 ```
-C3 #3 GPIO 0 → MG996R 360°（r 齒條）── 信號線（橘）
-C3 #3 GPIO 1 → MG996R 180°（θ 旋轉）── 信號線（橘）
-C3 #3 GPIO 4 → MG996R 180°（夾爪開合）── 信號線（橘）
-C3 #3 GPIO 5 → MG996R 180°（承物盒擋板）── 信號線（橘）
+C3 #3 GPIO 0 → BTS7960 #3 RPWM（固定端 spin left）
+C3 #3 GPIO 1 → BTS7960 #3 LPWM（固定端 spin right）
+C3 #3 GPIO 5 → Gate servo 信號線（橘）
 ```
 
 
 
 **測試**：
-1. 上傳 `04_ServoClawController.ino` 至 C3 #3
-2. Serial 輸入 `w` → 360° Servo 正轉（r 伸出）
-3. Serial 輸入 `s` → 360° Servo 反轉（r 縮回）
-4. Serial 輸入 `0` → 360° 停轉
-5. Serial 輸入 `i` → θ 旋轉正方向（角度 +15°）
-6. Serial 輸入 `o` → 夾爪張開
-7. Serial 輸入 `p` → 夾爪閉合
-8. Serial 輸入 `h` → 歸位
+1. 上傳 `04_FixedStageController.ino` 至 C3 #3
+2. Serial 輸入 `a` → 固定端 spin left
+3. Serial 輸入 `d` → 固定端 spin right
+4. Serial 輸入 `g` → Gate open
+5. Serial 輸入 `n` → Gate close
+6. Serial 輸入 `0` → 固定端全部停止
 9. Serial 輸入 `?` → 查看所有狀態
 
 **驗證**：
-- [ ] 360° Servo 正反轉正常，`0` 可停止
-- [ ] 180° θ Servo 步進旋轉正常
-- [ ] 180° 夾爪開合正常
-- [ ] 180° 承物盒擋板開合正常（`g` 開擋板 / `n` 關擋板）
-- [ ] 超時保護有效（持續運轉 5 秒後 360° Servo 自動停止）
-- [ ] 歸位功能正常（r 縮回 + 夾爪張開 + θ 居中 + 擋板關閉）
+- [ ] 固定端 spin 左右轉正常，`0` 可停止
+- [ ] Gate 開合正常（`g` 開 / `n` 關）
+- [ ] Gate 定時動作完成後會自動停止 PWM
+- [ ] spin 超時保護有效（持續運轉 5 秒後自動停止）
 
-> ⚠ 如果 360° Servo 發 `write(90)` 仍然微轉，是零點偏移。修改 `R_STOP` 常數（±2~5）。
+> ⚠ C3 #3 不控制上方夾爪與 z，這些線不可和固定端 Gate / spin 綁成同一束跨旋轉關節。
 
 ---
 
@@ -335,7 +331,7 @@ C3 #3 GPIO 5 → MG996R 180°（承物盒擋板）── 信號線（橘）
 1. 確認 3 個 MAC 已填入 `01_MainController.ino`
 2. 上傳 `01_MainController.ino` 至 ESP32 主控板（USB 接電腦）；Arduino IDE 的 `Partition Scheme` 選 `Huge APP`，CLI 使用 `esp32:esp32:esp32:PartitionScheme=huge_app`
 3. 打開 Serial Monitor
-4. 確認輸出：`Peer added: C3#1 Leg` / `C3#2 TurntableZ` / `C3#3 ServoClaw`
+4. 確認輸出：`Peer added: C3#1 Leg` / `C3#2 RotatingArm` / `C3#3 FixedStage`
 5. Serial 輸入 `f` → 確認 `-> Leg CMD:1 SPD:150`
 6. 觀察 C3 #1 的 Serial Monitor 是否收到指令
 7. 逐一測試所有指令
@@ -343,8 +339,8 @@ C3 #3 GPIO 5 → MG996R 180°（承物盒擋板）── 信號線（橘）
 **驗證**：
 - [ ] ESP-NOW 三路 Peer 全部成功加入
 - [ ] 腿部指令 `f/b/l/r/q/e/0` 正確轉發到 C3 #1（l/r/q/e 皆為原地旋轉）
-- [ ] 大圓盤+z 指令 `a/d/u/j` 正確轉發到 C3 #2
-- [ ] Servo 指令 `w/s/i/k/o/p/h` 正確轉發到 C3 #3
+- [ ] RotatingArm 指令 `w/s/x/i/k/o/p/u/j/h` 正確轉發到 C3 #2
+- [ ] FixedStage 指令 `a/d/g/n` 正確轉發到 C3 #3
 - [ ] 全停 `0` 同時發送三路
 
 ---

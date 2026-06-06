@@ -44,50 +44,44 @@ def main() -> int:
 
     protocol_rel = "esp32控制/protocol.h"
     protocol_text = read(protocol_rel)
-    require("enum LegCommand" in protocol_text, f"{protocol_rel} must define LegCommand", failures)
-    require(
-        "enum TurntableZCommand" in protocol_text,
-        f"{protocol_rel} must define TurntableZCommand",
-        failures,
-    )
-    require(
-        "enum ServoClawCommand" in protocol_text,
-        f"{protocol_rel} must define ServoClawCommand",
-        failures,
-    )
-    require(
-        "typedef struct ack_message" in protocol_text,
-        f"{protocol_rel} must define shared ack_message",
-        failures,
-    )
-    require("CTRL_LEG" in protocol_text, f"{protocol_rel} must define controller ids", failures)
-    require("CMD_LEG_STOP_ONLY" in protocol_text, f"{protocol_rel} must define split stop commands", failures)
-    require("CMD_TZ_STOP_ONLY" in protocol_text, f"{protocol_rel} must define split stop commands", failures)
-    require(
-        "CMD_SERVO_STOP_ONLY" in protocol_text,
-        f"{protocol_rel} must define split stop commands",
-        failures,
-    )
-    require(
-        "CMD_R_STOP" in protocol_text,
-        f"{protocol_rel} must define a r-only stop command",
-        failures,
-    )
+    for token in (
+        "enum LegCommand",
+        "enum RotatingArmCommand",
+        "enum FixedStageCommand",
+        "typedef struct leg_now_message",
+        "typedef struct rotating_arm_now_message",
+        "typedef struct fixed_stage_now_message",
+        "typedef struct ack_message",
+        "CTRL_ROTATING_ARM",
+        "CTRL_FIXED_STAGE",
+        "CMD_ARM_STOP_ONLY",
+        "CMD_FIXED_STOP_ONLY",
+        "CMD_ARM_R_STOP",
+        "CMD_FIXED_GATE_OPEN",
+        "CMD_FIXED_GATE_CLOSE",
+    ):
+        require(token in protocol_text, f"{protocol_rel} must define {token}", failures)
 
     sketch_rels = [
         "esp32控制/01_MainController/01_MainController.ino",
         "esp32控制/02_LegController/02_LegController.ino",
-        "esp32控制/03_TurntableZController/03_TurntableZController.ino",
-        "esp32控制/04_ServoClawController/04_ServoClawController.ino",
+        "esp32控制/03_RotatingArmController/03_RotatingArmController.ino",
+        "esp32控制/04_FixedStageController/04_FixedStageController.ino",
     ]
     duplicate_tokens = [
         "enum LegCommand",
+        "enum RotatingArmCommand",
+        "enum FixedStageCommand",
         "enum TurntableZCommand",
         "enum ServoClawCommand",
         "typedef struct leg_ack_message",
         "typedef struct ack_message",
     ]
     for rel in sketch_rels:
+        path = ROOT / rel
+        require(path.exists(), f"{rel} must exist", failures)
+        if not path.exists():
+            continue
         text = read(rel)
         require('#include "../protocol.h"' in text, f"{rel} must include ../protocol.h", failures)
         for token in duplicate_tokens:
@@ -102,172 +96,183 @@ def main() -> int:
     require("COMMAND_TIMEOUT_MS" in leg_text, f"{leg_rel} must define a remote command watchdog timeout", failures)
     require("checkCommandTimeout" in leg_text, f"{leg_rel} must stop motors when remote commands time out", failures)
 
-    tz_rel = "esp32控制/03_TurntableZController/03_TurntableZController.ino"
-    tz_text = read(tz_rel)
-    require("const int SPEED_MIN" not in tz_text, f"{tz_rel} must not shadow shared SPEED_MIN", failures)
-    require("const int SPEED_MAX" not in tz_text, f"{tz_rel} must not shadow shared SPEED_MAX", failures)
+    arm_rel = "esp32控制/03_RotatingArmController/03_RotatingArmController.ino"
+    if (ROOT / arm_rel).exists():
+        arm_text = read(arm_rel)
+        arm_setup = extract_function_body(arm_text, "setup")
+        arm_execute = extract_function_body(arm_text, "executeCommand")
+        arm_all_stop = extract_function_body(arm_text, "allStop")
 
-    servo_rel = "esp32控制/04_ServoClawController/04_ServoClawController.ino"
-    servo_text = read(servo_rel)
-    require("#include <esp_wifi.h>" in servo_text, f"{servo_rel} must include esp_wifi.h for fixed ESPNOW channel", failures)
-    require("esp_wifi_set_channel" in servo_text, f"{servo_rel} must set the ESP-NOW WiFi channel", failures)
-    servo_setup = extract_function_body(servo_text, "setup")
-    require(servo_setup, f"{servo_rel} must define setup()", failures)
-    require(
-        "servoR.attach" not in servo_setup,
-        f"{servo_rel} setup() must not attach GPIO 0 r servo during boot",
-        failures,
-    )
-    require(
-        "servoTheta.attach" not in servo_setup,
-        f"{servo_rel} setup() must not attach GPIO 1 theta servo during boot",
-        failures,
-    )
-    require(
-        "servoClaw.attach" not in servo_setup,
-        f"{servo_rel} setup() must not attach GPIO 4 claw servo during boot",
-        failures,
-    )
-    require(
-        "servoGate.attach" not in servo_setup,
-        f"{servo_rel} setup() must not attach GPIO 5 gate servo during boot",
-        failures,
-    )
-    require(
-        "rStop()" not in servo_setup,
-        f"{servo_rel} setup() must not command GPIO 0 r servo during boot",
-        failures,
-    )
-    require(
-        "servoTheta.write" not in servo_setup,
-        f"{servo_rel} setup() must not command GPIO 1 theta servo during boot",
-        failures,
-    )
-    require(
-        "clawOpen()" not in servo_setup,
-        f"{servo_rel} setup() must not command claw servo during boot",
-        failures,
-    )
-    require(
-        "gateClose()" not in servo_setup,
-        f"{servo_rel} setup() must not command gate servo during boot",
-        failures,
-    )
-    require(
-        "attachRServoIfNeeded" in servo_text,
-        f"{servo_rel} must lazily attach the GPIO 0 r servo only when commanded",
-        failures,
-    )
-    require(
-        "attachThetaServoIfNeeded" in servo_text,
-        f"{servo_rel} must lazily attach the GPIO 1 theta servo only when commanded",
-        failures,
-    )
-    require(
-        "attachClawServoIfNeeded" in servo_text,
-        f"{servo_rel} must lazily attach the GPIO 4 claw servo only when commanded",
-        failures,
-    )
-    require(
-        "attachGateServoIfNeeded" in servo_text,
-        f"{servo_rel} must lazily attach the GPIO 5 gate servo only when commanded",
-        failures,
-    )
-    servo_all_stop = extract_function_body(servo_text, "allStop")
-    require(servo_all_stop, f"{servo_rel} must define allStop()", failures)
-    require(
-        "detachAllServoOutputs()" in servo_all_stop,
-        f"{servo_rel} allStop() must detach GPIO 0/1/4/5 PWM outputs",
-        failures,
-    )
-    require(
-        "detachAllServoOutputs" in servo_text and "servoR.detach()" in servo_text,
-        f"{servo_rel} must detach GPIO 0 r servo output on stop",
-        failures,
-    )
-    require(
-        "servoTheta.detach()" in servo_text,
-        f"{servo_rel} must detach GPIO 1 theta servo output on stop",
-        failures,
-    )
-    require(
-        "servoClaw.detach()" in servo_text,
-        f"{servo_rel} must detach GPIO 4 claw servo output on stop",
-        failures,
-    )
-    require(
-        "servoGate.detach()" in servo_text,
-        f"{servo_rel} must detach GPIO 5 gate servo output on stop",
-        failures,
-    )
-    require(
-        "GATE_OPEN_SPEED" in servo_text and "GATE_CLOSE_SPEED" in servo_text,
-        f"{servo_rel} must treat the gate servo as timed 360-degree motion",
-        failures,
-    )
-    require("GATE_STOP" in servo_text, f"{servo_rel} must define a gate servo stop pulse", failures)
-    require(
-        "GATE_RUN_TIME_MS" in servo_text,
-        f"{servo_rel} must auto-stop timed gate motion",
-        failures,
-    )
-    require(
-        "checkGateTimeout" in servo_text,
-        f"{servo_rel} must check and stop timed gate motion in loop()",
-        failures,
-    )
-    servo_execute = extract_function_body(servo_text, "executeCommand")
-    require(servo_execute, f"{servo_rel} must define executeCommand()", failures)
-    require(
-        "case CMD_R_STOP:" in servo_execute and "rStop();" in servo_execute,
-        f"{servo_rel} must route CMD_R_STOP to rStop() only",
-        failures,
-    )
+        for token in (
+            "#include <ESP32Servo.h>",
+            "rotating_arm_now_message incomingMsg",
+            "const int servoR_Pin",
+            "const int servoTheta_Pin",
+            "const int servoClaw_Pin",
+            "const int motorZ_RPWM",
+            "const int motorZ_LPWM",
+            "pwmCh_Z_RPWM  = 4",
+            "pwmCh_Z_LPWM  = 5",
+            "attachRServoIfNeeded",
+            "attachThetaServoIfNeeded",
+            "attachClawServoIfNeeded",
+            "zUp()",
+            "zDown()",
+            "checkZTimeout",
+            "checkRTimeout",
+        ):
+            require(token in arm_text, f"{arm_rel} must contain {token}", failures)
+
+        for forbidden in (
+            "motorTurntable",
+            "CMD_FIXED_SPIN_LEFT",
+            "CMD_FIXED_SPIN_RIGHT",
+            "servoGate",
+        ):
+            require(forbidden not in arm_text, f"{arm_rel} must not control fixed-stage {forbidden}", failures)
+
+        require(arm_setup, f"{arm_rel} must define setup()", failures)
+        for forbidden in (
+            "servoR.attach",
+            "servoTheta.attach",
+            "servoClaw.attach",
+            "rStop()",
+            "clawOpen()",
+            "servoTheta.write",
+        ):
+            require(forbidden not in arm_setup, f"{arm_rel} setup() must not command {forbidden} during boot", failures)
+
+        require(arm_execute, f"{arm_rel} must define executeCommand()", failures)
+        for token in (
+            "case CMD_ARM_R_EXTEND:",
+            "case CMD_ARM_R_RETRACT:",
+            "case CMD_ARM_R_STOP:",
+            "case CMD_ARM_THETA_POS:",
+            "case CMD_ARM_THETA_NEG:",
+            "case CMD_ARM_CLAW_OPEN:",
+            "case CMD_ARM_CLAW_CLOSE:",
+            "case CMD_ARM_Z_UP:",
+            "case CMD_ARM_Z_DOWN:",
+            "case CMD_ARM_HOME:",
+        ):
+            require(token in arm_execute, f"{arm_rel} executeCommand() must route {token}", failures)
+
+        require(
+            "detachAllServoOutputs()" in arm_all_stop and "zStop()" in arm_all_stop,
+            f"{arm_rel} allStop() must stop Z and detach rotating arm servo outputs",
+            failures,
+        )
+
+    fixed_rel = "esp32控制/04_FixedStageController/04_FixedStageController.ino"
+    if (ROOT / fixed_rel).exists():
+        fixed_text = read(fixed_rel)
+        fixed_setup = extract_function_body(fixed_text, "setup")
+        fixed_execute = extract_function_body(fixed_text, "executeCommand")
+        fixed_all_stop = extract_function_body(fixed_text, "allStop")
+
+        for token in (
+            "#include <ESP32Servo.h>",
+            "fixed_stage_now_message incomingMsg",
+            "const int motorSpin_RPWM",
+            "const int motorSpin_LPWM",
+            "const int servoGate_Pin",
+            "pwmCh_Spin_RPWM  = 4",
+            "pwmCh_Spin_LPWM  = 5",
+            "spinLeft()",
+            "spinRight()",
+            "spinStop()",
+            "attachGateServoIfNeeded",
+            "checkSpinTimeout",
+            "checkGateTimeout",
+            "GATE_OPEN_SPEED",
+            "GATE_CLOSE_SPEED",
+        ):
+            require(token in fixed_text, f"{fixed_rel} must contain {token}", failures)
+
+        for forbidden in (
+            "servoR",
+            "servoTheta",
+            "servoClaw",
+            "CMD_ARM_R_EXTEND",
+            "CMD_ARM_Z_UP",
+        ):
+            require(forbidden not in fixed_text, f"{fixed_rel} must not control rotating-arm {forbidden}", failures)
+
+        require(fixed_setup, f"{fixed_rel} must define setup()", failures)
+        require(
+            "servoGate.attach" not in fixed_setup and "gateClose()" not in fixed_setup,
+            f"{fixed_rel} setup() must not command gate servo during boot",
+            failures,
+        )
+
+        require(fixed_execute, f"{fixed_rel} must define executeCommand()", failures)
+        for token in (
+            "case CMD_FIXED_SPIN_LEFT:",
+            "case CMD_FIXED_SPIN_RIGHT:",
+            "case CMD_FIXED_GATE_OPEN:",
+            "case CMD_FIXED_GATE_CLOSE:",
+        ):
+            require(token in fixed_execute, f"{fixed_rel} executeCommand() must route {token}", failures)
+
+        require(
+            "spinStop()" in fixed_all_stop and "gateStop()" in fixed_all_stop,
+            f"{fixed_rel} allStop() must stop fixed spin motor and gate servo",
+            failures,
+        )
 
     main_rel = "esp32控制/01_MainController/01_MainController.ino"
     main_text = read(main_rel)
-    for token in ("LEGSTOP", "TZSTOP", "SERVOSTOP", "RSTOP", "SPD:", "GATEOPEN", "GATECLOSE"):
-        require(token in main_text, f"{main_rel} must support {token}", failures)
+    for token in (
+        "LEGSTOP",
+        "ARMSTOP",
+        "FIXEDSTOP",
+        "TZSTOP",
+        "SERVOSTOP",
+        "RSTOP",
+        "SPD:",
+        "GATEOPEN",
+        "GATECLOSE",
+        "COMMAND_KEEPALIVE_INTERVAL_MS",
+        "normalizeBleCommandText",
+        "normalizeThetaCommandText",
+        "case 'I':",
+        "case 'K':",
+        "uint8_t rotatingArm_Address[] = {0x10, 0xB4, 0x1D, 0x1C, 0xD1, 0x28}",
+        "uint8_t fixedStage_Address[] = {0x58, 0x8C, 0x81, 0xA1, 0x30, 0xD0}",
+    ):
+        require(token in main_text, f"{main_rel} must contain {token}", failures)
+
+    for token in (
+        "queueRotatingArmCommand(CMD_ARM_Z_UP",
+        "queueRotatingArmCommand(CMD_ARM_Z_DOWN",
+        "queueRotatingArmCommand(CMD_ARM_R_EXTEND",
+        "queueRotatingArmCommand(CMD_ARM_R_RETRACT",
+        "queueRotatingArmCommand(CMD_ARM_R_STOP",
+        "queueRotatingArmCommand(CMD_ARM_THETA_POS",
+        "queueRotatingArmCommand(CMD_ARM_THETA_NEG",
+        "queueRotatingArmCommand(CMD_ARM_CLAW_OPEN",
+        "queueRotatingArmCommand(CMD_ARM_CLAW_CLOSE",
+        "queueFixedStageCommand(CMD_FIXED_SPIN_LEFT",
+        "queueFixedStageCommand(CMD_FIXED_SPIN_RIGHT",
+        "queueFixedStageCommand(CMD_FIXED_GATE_OPEN",
+        "queueFixedStageCommand(CMD_FIXED_GATE_CLOSE",
+    ):
+        require(token in main_text, f"{main_rel} must route {token}", failures)
+
     require(
-        "normalizeBleCommandText" in main_text,
-        f"{main_rel} must normalize BLE commands before matching text aliases",
+        'normalizedCmd == "SERVOSTOP"' in main_text and "queueRotatingArmCommand(CMD_ARM_STOP" in main_text,
+        f"{main_rel} must keep SERVOSTOP as a rotating-arm servo stop alias",
         failures,
     )
     require(
-        'normalizedCmd == "GATEOPEN"' in main_text,
-        f"{main_rel} must accept spaced/underscored Gate Open BLE aliases",
+        'normalizedCmd == "FIXEDSTOP"' in main_text and "queueFixedStageCommand(CMD_FIXED_STOP" in main_text,
+        f"{main_rel} must support FIXEDSTOP for C3 #3",
         failures,
     )
     require(
-        'normalizedCmd == "GATECLOSE"' in main_text,
-        f"{main_rel} must accept spaced/underscored Gate Close BLE aliases",
-        failures,
-    )
-    require(
-        'normalizedCmd == "RSTOP"' in main_text and "CMD_R_STOP" in main_text,
-        f"{main_rel} must accept RSTOP as a r-only ServoClaw stop command",
-        failures,
-    )
-    require(
-        'thetaCmd == "THETA+"' in main_text and 'thetaCmd == "THETAPLUS"' in main_text,
-        f"{main_rel} must accept Theta+ BLE text aliases",
-        failures,
-    )
-    require(
-        'thetaCmd == "THETA-"' in main_text and 'thetaCmd == "THETAMINUS"' in main_text,
-        f"{main_rel} must accept Theta- BLE text aliases",
-        failures,
-    )
-    require(
-        "COMMAND_KEEPALIVE_INTERVAL_MS" in main_text,
-        f"{main_rel} must send keepalive packets for sustained leg movement",
-        failures,
-    )
-    require("case 'I':" in main_text, f"{main_rel} must accept uppercase I for Theta+", failures)
-    require("case 'K':" in main_text, f"{main_rel} must accept uppercase K for Theta-", failures)
-    require(
-        "uint8_t turntableZ_Address[] = {0x10, 0xB4, 0x1D, 0x1C, 0xD1, 0x28}" in main_text,
-        f"{main_rel} must keep the measured C3 #2 MAC address",
+        "queueRotatingArmCommand(CMD_ARM_HOME" in main_text
+        and "queueFixedStageCommand(CMD_FIXED_GATE_CLOSE" in main_text,
+        f"{main_rel} HOME must route arm home and fixed gate close",
         failures,
     )
 
@@ -293,7 +298,7 @@ def main() -> int:
 
     official_app_doc_rel = "取物機器人(八足Jansen)/app_inventor/App指令對照表.md"
     official_app_doc = read(official_app_doc_rel)
-    for token in ("LEGSTOP", "TZSTOP", "SERVOSTOP", "RSTOP", "STOP"):
+    for token in ("LEGSTOP", "ARMSTOP", "FIXEDSTOP", "TZSTOP", "SERVOSTOP", "RSTOP", "STOP"):
         require(token in official_app_doc, f"{official_app_doc_rel} must document {token}", failures)
     require("TouchUp" not in official_app_doc, f"{official_app_doc_rel} must not teach TouchUp stop flow", failures)
     require("PickupRobot" not in official_app_doc, f"{official_app_doc_rel} must not use PickupRobot", failures)
@@ -317,7 +322,16 @@ def main() -> int:
     require((ROOT / ble_guide_rel).exists(), f"{ble_guide_rel} must exist", failures)
     if (ROOT / ble_guide_rel).exists():
         ble_guide_text = read(ble_guide_rel)
-        for token in ("BLE Controller – Arduino ESP32", "LEGSTOP", "TZSTOP", "SERVOSTOP", "RSTOP", "STOP"):
+        for token in (
+            "BLE Controller – Arduino ESP32",
+            "LEGSTOP",
+            "ARMSTOP",
+            "FIXEDSTOP",
+            "TZSTOP",
+            "SERVOSTOP",
+            "RSTOP",
+            "STOP",
+        ):
             require(token in ble_guide_text, f"{ble_guide_rel} must document {token}", failures)
 
     root_readme = read("README.md")
@@ -330,10 +344,25 @@ def main() -> int:
     sop_text = read(sop_rel)
     bom_text = read("BOM.md")
     pickup_bom_text = read("取物機器人(八足Jansen)/BOM.md")
+    esp32_readme = read("esp32控制/README.md")
 
     require("原地旋轉轉向" in root_readme, "README.md must describe walking turn mode as spin turn", failures)
     require("差速轉向" not in pickup_readme, "pickup README must not describe the current leg control as differential turn", failures)
-    require("Servo ×4" in wiring_text, f"{wiring_rel} must consistently document four servos", failures)
+    for token in (
+        "03_RotatingArmController",
+        "04_FixedStageController",
+        "C3 #2 旋轉端",
+        "C3 #3 固定端",
+    ):
+        require(token in esp32_readme, f"esp32控制/README.md must document {token}", failures)
+    for token in (
+        "C3 #2 RotatingArm",
+        "C3 #3 FixedStage",
+        "旋轉中心",
+        "鬆弛線圈",
+        "Servo ×3",
+    ):
+        require(token in wiring_text, f"{wiring_rel} must document {token}", failures)
     require("VCC" in wiring_text and "3.3V" in wiring_text, f"{wiring_rel} must document BTS7960 logic VCC wiring", failures)
     require("BMS" in bom_text and "保險絲座" in bom_text and "端子台" in bom_text, "BOM.md must include power safety parts", failures)
     require("BMS" in pickup_bom_text and "保險絲座" in pickup_bom_text and "端子台" in pickup_bom_text, "pickup BOM must include power safety parts", failures)

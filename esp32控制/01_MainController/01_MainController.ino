@@ -31,11 +31,11 @@ const unsigned long COMMAND_KEEPALIVE_INTERVAL_MS = 250;
 
 // =====================================================
 //  子控板 MAC 地址
-//  ⚠ 將 0xFF 佔位符替換為實際 MAC 地址
+//  將 0xFF 佔位符替換為實際 MAC 地址
 // =====================================================
-uint8_t Leg_Address[] = {0x58, 0x8C, 0x81, 0x9D, 0xF6, 0x90};       // C3 #1 腿部
-uint8_t turntableZ_Address[] = {0x10, 0xB4, 0x1D, 0x1C, 0xD1, 0x28};  // C3 #2 大圓盤+z
-uint8_t servoClaw_Address[] = {0x58, 0x8C, 0x81, 0xA1, 0x30, 0xD0};   // C3 #3 Servo
+uint8_t Leg_Address[] = {0x58, 0x8C, 0x81, 0x9D, 0xF6, 0x90};          // C3 #1 腿部
+uint8_t rotatingArm_Address[] = {0x10, 0xB4, 0x1D, 0x1C, 0xD1, 0x28};  // C3 #2 旋轉端上方機構 + Z
+uint8_t fixedStage_Address[] = {0x58, 0x8C, 0x81, 0xA1, 0x30, 0xD0};   // C3 #3 固定端暫存盒 + Spin
 
 static const char *BLE_DEVICE_NAME = "ESP32_MainController";
 static const char *SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
@@ -53,13 +53,13 @@ uint8_t legCommand = CMD_LEG_STOP;
 uint8_t legSpeed = 0;
 bool legDirty = false;
 
-uint8_t tzCommand = CMD_TZ_STOP;
-uint8_t tzSpeed = 0;
-bool tzDirty = false;
+uint8_t rotatingArmCommand = CMD_ARM_STOP;
+uint8_t rotatingArmSpeed = 0;
+bool rotatingArmDirty = false;
 
-uint8_t servoCommand = CMD_SERVO_STOP;
-uint8_t servoSpeed = 0;
-bool servoDirty = false;
+uint8_t fixedStageCommand = CMD_FIXED_STOP;
+uint8_t fixedStageSpeed = 0;
+bool fixedStageDirty = false;
 
 // =====================================================
 //  工具函式
@@ -102,10 +102,10 @@ const char *controllerNameFromId(uint8_t controllerId) {
   switch (controllerId) {
     case CTRL_LEG:
       return "Leg";
-    case CTRL_TURNTABLE_Z:
-      return "TurntableZ";
-    case CTRL_SERVO:
-      return "ServoClaw";
+    case CTRL_ROTATING_ARM:
+      return "RotatingArm";
+    case CTRL_FIXED_STAGE:
+      return "FixedStage";
     default:
       return "Unknown";
   }
@@ -118,11 +118,11 @@ const char *controllerNameFromMac(const uint8_t *mac) {
   if (memcmp(mac, Leg_Address, 6) == 0) {
     return "Leg";
   }
-  if (memcmp(mac, turntableZ_Address, 6) == 0) {
-    return "TurntableZ";
+  if (memcmp(mac, rotatingArm_Address, 6) == 0) {
+    return "RotatingArm";
   }
-  if (memcmp(mac, servoClaw_Address, 6) == 0) {
-    return "ServoClaw";
+  if (memcmp(mac, fixedStage_Address, 6) == 0) {
+    return "FixedStage";
   }
   return "Unknown";
 }
@@ -175,22 +175,27 @@ void queueLegCommand(uint8_t cmd, uint8_t spd) {
   legDirty = true;
 }
 
-void queueTZCommand(uint8_t cmd, uint8_t spd) {
-  tzCommand = cmd;
-  tzSpeed = spd;
-  tzDirty = true;
+void queueRotatingArmCommand(uint8_t cmd, uint8_t spd) {
+  rotatingArmCommand = cmd;
+  rotatingArmSpeed = spd;
+  rotatingArmDirty = true;
 }
 
-void queueServoCommand(uint8_t cmd, uint8_t spd) {
-  servoCommand = cmd;
-  servoSpeed = spd;
-  servoDirty = true;
+void queueFixedStageCommand(uint8_t cmd, uint8_t spd) {
+  fixedStageCommand = cmd;
+  fixedStageSpeed = spd;
+  fixedStageDirty = true;
+}
+
+void queueHomeCommand() {
+  queueRotatingArmCommand(CMD_ARM_HOME, 0);
+  queueFixedStageCommand(CMD_FIXED_GATE_CLOSE, 0);
 }
 
 void queueAllStop() {
   queueLegCommand(CMD_LEG_STOP, 0);
-  queueTZCommand(CMD_TZ_STOP, 0);
-  queueServoCommand(CMD_SERVO_STOP, 0);
+  queueRotatingArmCommand(CMD_ARM_STOP, 0);
+  queueFixedStageCommand(CMD_FIXED_STOP, 0);
 }
 
 bool sendLegCommandNow() {
@@ -203,24 +208,24 @@ bool sendLegCommandNow() {
   return esp_now_send(Leg_Address, (uint8_t *)&msg, sizeof(msg)) == ESP_OK;
 }
 
-bool sendTZCommandNow() {
-  if (!isConfiguredMac(turntableZ_Address)) {
-    notifyBle("!! TurntableZ peer MAC not configured");
+bool sendRotatingArmCommandNow() {
+  if (!isConfiguredMac(rotatingArm_Address)) {
+    notifyBle("!! RotatingArm peer MAC not configured");
     return false;
   }
 
-  turntable_z_now_message msg = {tzCommand, tzSpeed};
-  return esp_now_send(turntableZ_Address, (uint8_t *)&msg, sizeof(msg)) == ESP_OK;
+  rotating_arm_now_message msg = {rotatingArmCommand, rotatingArmSpeed};
+  return esp_now_send(rotatingArm_Address, (uint8_t *)&msg, sizeof(msg)) == ESP_OK;
 }
 
-bool sendServoCommandNow() {
-  if (!isConfiguredMac(servoClaw_Address)) {
-    notifyBle("!! ServoClaw peer MAC not configured");
+bool sendFixedStageCommandNow() {
+  if (!isConfiguredMac(fixedStage_Address)) {
+    notifyBle("!! FixedStage peer MAC not configured");
     return false;
   }
 
-  servo_claw_now_message msg = {servoCommand, servoSpeed};
-  return esp_now_send(servoClaw_Address, (uint8_t *)&msg, sizeof(msg)) == ESP_OK;
+  fixed_stage_now_message msg = {fixedStageCommand, fixedStageSpeed};
+  return esp_now_send(fixedStage_Address, (uint8_t *)&msg, sizeof(msg)) == ESP_OK;
 }
 
 void sendPendingCommands() {
@@ -232,18 +237,18 @@ void sendPendingCommands() {
     legDirty = false;
   }
 
-  if (tzDirty) {
-    if (sendTZCommandNow()) {
-      notifyBle("-> TurntableZ CMD:" + String(tzCommand));
+  if (rotatingArmDirty) {
+    if (sendRotatingArmCommandNow()) {
+      notifyBle("-> RotatingArm CMD:" + String(rotatingArmCommand));
     }
-    tzDirty = false;
+    rotatingArmDirty = false;
   }
 
-  if (servoDirty) {
-    if (sendServoCommandNow()) {
-      notifyBle("-> ServoClaw CMD:" + String(servoCommand));
+  if (fixedStageDirty) {
+    if (sendFixedStageCommandNow()) {
+      notifyBle("-> FixedStage CMD:" + String(fixedStageCommand));
     }
-    servoDirty = false;
+    fixedStageDirty = false;
   }
 }
 
@@ -339,63 +344,63 @@ void processSingleChar(char c) {
       break;
 
     case 'a':
-      queueTZCommand(CMD_TURNTABLE_LEFT, FULL_SPEED);
-      notifyBle("CMD: Turntable Left");
+      queueFixedStageCommand(CMD_FIXED_SPIN_LEFT, FULL_SPEED);
+      notifyBle("CMD: Fixed Spin Left");
       break;
     case 'd':
-      queueTZCommand(CMD_TURNTABLE_RIGHT, FULL_SPEED);
-      notifyBle("CMD: Turntable Right");
+      queueFixedStageCommand(CMD_FIXED_SPIN_RIGHT, FULL_SPEED);
+      notifyBle("CMD: Fixed Spin Right");
       break;
     case 'u':
-      queueTZCommand(CMD_Z_UP, FULL_SPEED);
+      queueRotatingArmCommand(CMD_ARM_Z_UP, FULL_SPEED);
       notifyBle("CMD: Z Up");
       break;
     case 'j':
-      queueTZCommand(CMD_Z_DOWN, FULL_SPEED);
+      queueRotatingArmCommand(CMD_ARM_Z_DOWN, FULL_SPEED);
       notifyBle("CMD: Z Down");
       break;
 
     case 'w':
-      queueServoCommand(CMD_R_EXTEND, 0);
+      queueRotatingArmCommand(CMD_ARM_R_EXTEND, 0);
       notifyBle("CMD: r Extend");
       break;
     case 's':
-      queueServoCommand(CMD_R_RETRACT, 0);
+      queueRotatingArmCommand(CMD_ARM_R_RETRACT, 0);
       notifyBle("CMD: r Retract");
       break;
     case 'x':
     case 'X':
-      queueServoCommand(CMD_R_STOP, 0);
+      queueRotatingArmCommand(CMD_ARM_R_STOP, 0);
       notifyBle("CMD: r STOP");
       break;
     case 'i':
     case 'I':
-      queueServoCommand(CMD_THETA_POS, 0);
+      queueRotatingArmCommand(CMD_ARM_THETA_POS, 0);
       notifyBle("CMD: Theta+");
       break;
     case 'k':
     case 'K':
-      queueServoCommand(CMD_THETA_NEG, 0);
+      queueRotatingArmCommand(CMD_ARM_THETA_NEG, 0);
       notifyBle("CMD: Theta-");
       break;
     case 'o':
-      queueServoCommand(CMD_CLAW_OPEN, 0);
+      queueRotatingArmCommand(CMD_ARM_CLAW_OPEN, 0);
       notifyBle("CMD: Claw Open");
       break;
     case 'p':
-      queueServoCommand(CMD_CLAW_CLOSE, 0);
+      queueRotatingArmCommand(CMD_ARM_CLAW_CLOSE, 0);
       notifyBle("CMD: Claw Close");
       break;
     case 'g':
-      queueServoCommand(CMD_GATE_OPEN, 0);
+      queueFixedStageCommand(CMD_FIXED_GATE_OPEN, 0);
       notifyBle("CMD: Gate Open");
       break;
     case 'n':
-      queueServoCommand(CMD_GATE_CLOSE, 0);
+      queueFixedStageCommand(CMD_FIXED_GATE_CLOSE, 0);
       notifyBle("CMD: Gate Close");
       break;
     case 'h':
-      queueServoCommand(CMD_SERVO_HOME, 0);
+      queueHomeCommand();
       notifyBle("CMD: Home");
       break;
 
@@ -403,13 +408,13 @@ void processSingleChar(char c) {
       queueLegCommand(CMD_LEG_STOP, 0);
       notifyBle("CMD: LEG STOP");
       break;
-    case CMD_TZ_STOP_ONLY:
-      queueTZCommand(CMD_TZ_STOP, 0);
-      notifyBle("CMD: TZ STOP");
+    case CMD_ARM_STOP_ONLY:
+      queueRotatingArmCommand(CMD_ARM_STOP, 0);
+      notifyBle("CMD: ARM STOP");
       break;
-    case CMD_SERVO_STOP_ONLY:
-      queueServoCommand(CMD_SERVO_STOP, 0);
-      notifyBle("CMD: SERVO STOP");
+    case CMD_FIXED_STOP_ONLY:
+      queueFixedStageCommand(CMD_FIXED_STOP, 0);
+      notifyBle("CMD: FIXED STOP");
       break;
     case '0':
       queueAllStop();
@@ -455,58 +460,58 @@ void handleBleCommand(String commandText) {
   } else if (normalizedCmd == "LEGSTOP") {
     queueLegCommand(CMD_LEG_STOP, 0);
     notifyBle("CMD: LEG STOP");
-  } else if (normalizedCmd == "TL" || normalizedCmd == "TURNTABLELEFT") {
-    queueTZCommand(CMD_TURNTABLE_LEFT, FULL_SPEED);
-    notifyBle("CMD: TURNTABLE LEFT");
-  } else if (normalizedCmd == "TR" || normalizedCmd == "TURNTABLERIGHT") {
-    queueTZCommand(CMD_TURNTABLE_RIGHT, FULL_SPEED);
-    notifyBle("CMD: TURNTABLE RIGHT");
+  } else if (normalizedCmd == "TL" || normalizedCmd == "TURNTABLELEFT" || normalizedCmd == "FIXEDLEFT") {
+    queueFixedStageCommand(CMD_FIXED_SPIN_LEFT, FULL_SPEED);
+    notifyBle("CMD: FIXED SPIN LEFT");
+  } else if (normalizedCmd == "TR" || normalizedCmd == "TURNTABLERIGHT" || normalizedCmd == "FIXEDRIGHT") {
+    queueFixedStageCommand(CMD_FIXED_SPIN_RIGHT, FULL_SPEED);
+    notifyBle("CMD: FIXED SPIN RIGHT");
   } else if (normalizedCmd == "UP" || normalizedCmd == "ZU") {
-    queueTZCommand(CMD_Z_UP, FULL_SPEED);
+    queueRotatingArmCommand(CMD_ARM_Z_UP, FULL_SPEED);
     notifyBle("CMD: Z UP");
   } else if (normalizedCmd == "DOWN" || normalizedCmd == "ZD") {
-    queueTZCommand(CMD_Z_DOWN, FULL_SPEED);
+    queueRotatingArmCommand(CMD_ARM_Z_DOWN, FULL_SPEED);
     notifyBle("CMD: Z DOWN");
-  } else if (normalizedCmd == "TZSTOP") {
-    queueTZCommand(CMD_TZ_STOP, 0);
-    notifyBle("CMD: TZ STOP");
+  } else if (normalizedCmd == "TZSTOP" || normalizedCmd == "ARMSTOP" || normalizedCmd == "SERVOSTOP") {
+    queueRotatingArmCommand(CMD_ARM_STOP, 0);
+    notifyBle("CMD: ARM STOP");
   } else if (normalizedCmd == "EXTEND") {
-    queueServoCommand(CMD_R_EXTEND, 0);
+    queueRotatingArmCommand(CMD_ARM_R_EXTEND, 0);
     notifyBle("CMD: R EXTEND");
   } else if (normalizedCmd == "RETRACT") {
-    queueServoCommand(CMD_R_RETRACT, 0);
+    queueRotatingArmCommand(CMD_ARM_R_RETRACT, 0);
     notifyBle("CMD: R RETRACT");
   } else if (normalizedCmd == "RSTOP") {
-    queueServoCommand(CMD_R_STOP, 0);
+    queueRotatingArmCommand(CMD_ARM_R_STOP, 0);
     notifyBle("CMD: R STOP");
   } else if (thetaCmd == "THETA+" || thetaCmd == "THETAPLUS" ||
              thetaCmd == "THETAPOS" || thetaCmd == "THETAPOSITIVE" ||
              thetaCmd == "T+") {
-    queueServoCommand(CMD_THETA_POS, 0);
+    queueRotatingArmCommand(CMD_ARM_THETA_POS, 0);
     notifyBle("CMD: THETA+");
   } else if (thetaCmd == "THETA-" || thetaCmd == "THETAMINUS" ||
              thetaCmd == "THETANEG" || thetaCmd == "THETANEGATIVE" ||
              thetaCmd == "T-") {
-    queueServoCommand(CMD_THETA_NEG, 0);
+    queueRotatingArmCommand(CMD_ARM_THETA_NEG, 0);
     notifyBle("CMD: THETA-");
   } else if (normalizedCmd == "OPEN") {
-    queueServoCommand(CMD_CLAW_OPEN, 0);
+    queueRotatingArmCommand(CMD_ARM_CLAW_OPEN, 0);
     notifyBle("CMD: CLAW OPEN");
   } else if (normalizedCmd == "CLOSE") {
-    queueServoCommand(CMD_CLAW_CLOSE, 0);
+    queueRotatingArmCommand(CMD_ARM_CLAW_CLOSE, 0);
     notifyBle("CMD: CLAW CLOSE");
   } else if (normalizedCmd == "HOME") {
-    queueServoCommand(CMD_SERVO_HOME, 0);
+    queueHomeCommand();
     notifyBle("CMD: HOME");
   } else if (normalizedCmd == "GATEOPEN" || normalizedCmd == "GO") {
-    queueServoCommand(CMD_GATE_OPEN, 0);
+    queueFixedStageCommand(CMD_FIXED_GATE_OPEN, 0);
     notifyBle("CMD: GATE OPEN");
   } else if (normalizedCmd == "GATECLOSE" || normalizedCmd == "GC") {
-    queueServoCommand(CMD_GATE_CLOSE, 0);
+    queueFixedStageCommand(CMD_FIXED_GATE_CLOSE, 0);
     notifyBle("CMD: GATE CLOSE");
-  } else if (normalizedCmd == "SERVOSTOP") {
-    queueServoCommand(CMD_SERVO_STOP, 0);
-    notifyBle("CMD: SERVO STOP");
+  } else if (normalizedCmd == "FIXEDSTOP" || normalizedCmd == "GATESTOP" || normalizedCmd == "TSTOP") {
+    queueFixedStageCommand(CMD_FIXED_STOP, 0);
+    notifyBle("CMD: FIXED STOP");
   } else if (normalizedCmd == "STOP" || normalizedCmd == "ALLSTOP") {
     queueAllStop();
     notifyBle("CMD: ALL STOP");
@@ -593,8 +598,8 @@ void setupEspNow() {
   esp_now_register_recv_cb(OnDataRecv);
 
   addPeer(Leg_Address, "C3#1 Leg");
-  addPeer(turntableZ_Address, "C3#2 TurntableZ");
-  addPeer(servoClaw_Address, "C3#3 ServoClaw");
+  addPeer(rotatingArm_Address, "C3#2 RotatingArm");
+  addPeer(fixedStage_Address, "C3#3 FixedStage");
 
   Serial.println("ESP-NOW initialized");
 }
@@ -658,15 +663,15 @@ void setup() {
   Serial.print("Leg peer: ");
   printMacAddress(Leg_Address);
   Serial.println();
-  Serial.print("TurntableZ peer: ");
-  printMacAddress(turntableZ_Address);
+  Serial.print("RotatingArm peer: ");
+  printMacAddress(rotatingArm_Address);
   Serial.println();
-  Serial.print("ServoClaw peer: ");
-  printMacAddress(servoClaw_Address);
+  Serial.print("FixedStage peer: ");
+  printMacAddress(fixedStage_Address);
   Serial.println();
 
-  printMacConfigWarning("TurntableZ", turntableZ_Address);
-  printMacConfigWarning("ServoClaw", servoClaw_Address);
+  printMacConfigWarning("RotatingArm", rotatingArm_Address);
+  printMacConfigWarning("FixedStage", fixedStage_Address);
 
   setupEspNow();
   setupBle();
@@ -675,14 +680,15 @@ void setup() {
   Serial.println();
   Serial.println("--- Command Reference ---");
   Serial.println(" Leg move:   f/b/l/r/q/e  | half: F/B/L/R");
-  Serial.println(" Turntable:  a=left d=right  u=up j=down");
-  Serial.println(" Servo:      w/s/x/i/k/o/p/g/n/h");
-  Serial.println(" Split stop: 1=LEGSTOP 2=TZSTOP 3=SERVOSTOP");
+  Serial.println(" Fixed:      a=spin left d=spin right  g=gate open n=gate close");
+  Serial.println(" Arm:        u=z up j=z down  w/s/x/i/k/o/p/h");
+  Serial.println(" Split stop: 1=LEGSTOP 2=ARMSTOP/TZSTOP/SERVOSTOP 3=FIXEDSTOP");
   Serial.println(" All stop:   0=STOP ALL");
   Serial.println(" BLE text:   FORWARD BACKWARD LEFT RIGHT LEGSTOP");
-  Serial.println("             TL TR UP DOWN TZSTOP");
-  Serial.println("             EXTEND RETRACT RSTOP OPEN CLOSE HOME");
-  Serial.println("             GATEOPEN GATECLOSE SERVOSTOP STOP");
+  Serial.println("             TL TR FIXEDSTOP");
+  Serial.println("             UP DOWN ARMSTOP TZSTOP SERVOSTOP");
+  Serial.println("             EXTEND RETRACT RSTOP THETA+ THETA- OPEN CLOSE HOME");
+  Serial.println("             GATEOPEN GATECLOSE STOP");
   Serial.println("             SPD:150");
   Serial.println("-------------------------");
 }

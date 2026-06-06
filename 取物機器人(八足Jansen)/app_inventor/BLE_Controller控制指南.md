@@ -23,20 +23,12 @@
 | Right Spin | `RIGHT` |
 | Leg Stop | `LEGSTOP` |
 
-### 大圓盤 / z 區（C3 #2）
+### 旋轉端上方機構區（C3 #2）
 
 | 按鈕名稱 | 發送命令 |
 |---------|---------|
-| Turntable Left | `TL` |
-| Turntable Right | `TR` |
 | Z Up | `UP` |
 | Z Down | `DOWN` |
-| TZ Stop | `TZSTOP` |
-
-### Servo / 夾爪區（C3 #3）
-
-| 按鈕名稱 | 發送命令 |
-|---------|---------|
 | Extend | `EXTEND` |
 | Retract | `RETRACT` |
 | R Stop | `RSTOP` |
@@ -44,10 +36,20 @@
 | Theta- | `k` |
 | Claw Open | `OPEN` |
 | Claw Close | `CLOSE` |
+| Home | `HOME` |
+| Arm Stop | `ARMSTOP` |
+| TZ Stop | `TZSTOP` |
+| Servo Stop | `SERVOSTOP` |
+
+### 固定端暫存盒 / spin 區（C3 #3）
+
+| 按鈕名稱 | 發送命令 |
+|---------|---------|
+| Turntable Left | `TL` |
+| Turntable Right | `TR` |
 | Gate Open | `GATEOPEN` |
 | Gate Close | `GATECLOSE` |
-| Home | `HOME` |
-| Servo Stop | `SERVOSTOP` |
+| Fixed Stop | `FIXEDSTOP` |
 
 ### 全域急停
 
@@ -59,9 +61,11 @@
 
 1. 每個區域都要有自己的停止鍵：
    - `LEGSTOP`
+   - `ARMSTOP`
    - `TZSTOP`
    - `RSTOP`
    - `SERVOSTOP`
+   - `FIXEDSTOP`
 2. 全域急停 `STOP` 必須做成最大顆、最容易按到的紅色按鈕。
 3. `STOP` 只用於緊急狀況或整體結束，不拿來取代各區停止鍵。
 4. 腿部預設速度可額外做進階按鈕，4S 直供 12V 馬達時先用保守值：
@@ -76,12 +80,11 @@
 │ [Forward] [Backward] [Left Spin] [Right Spin]       │
 │ [Leg Stop]                                          │
 │                                                      │
-│ [Turntable Left] [Turntable Right] [Z Up] [Z Down]  │
-│ [TZ Stop]                                           │
+│ [Z Up] [Z Down] [Extend] [Retract] [Theta+]         │
+│ [Theta-] [Open] [Close] [Home] [Arm Stop]           │
 │                                                      │
-│ [Extend] [Retract] [Theta+] [Theta-]                │
-│ [Open] [Close] [Gate Open] [Gate Close] [Home]      │
-│ [Servo Stop]                                        │
+│ [Turntable Left] [Turntable Right]                  │
+│ [Gate Open] [Gate Close] [Fixed Stop]               │
 │                                                      │
 │                 [ EMERGENCY STOP ]                  │
 └──────────────────────────────────────────────────────┘
@@ -90,9 +93,10 @@
 ## 驗證順序
 
 1. 先測 `FORWARD` / `LEGSTOP`
-2. 再測 `TL` / `TZSTOP`
-3. 再測 `EXTEND` / `SERVOSTOP`
-4. 最後測 `STOP` 是否能同時停掉三路
+2. 再測 `UP` / `ARMSTOP`
+3. 再測 `EXTEND` / `RSTOP`
+4. 再測 `TL` / `FIXEDSTOP`
+5. 最後測 `STOP` 是否能同時停掉三路
 
 ## 常見問題
 

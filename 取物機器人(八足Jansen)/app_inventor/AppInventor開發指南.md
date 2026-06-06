@@ -28,16 +28,19 @@
 1. BLE 裝置名稱固定為 `ESP32_MainController`
 2. 正式命令以文字命令為主：
    - 腿部：`FORWARD` / `BACKWARD` / `LEFT` / `RIGHT` / `LEGSTOP`
-   - 大圓盤與 z：`TL` / `TR` / `UP` / `DOWN` / `TZSTOP`
-   - Servo / 夾爪：`EXTEND` / `RETRACT` / `RSTOP` / `OPEN` / `CLOSE` / `HOME` / `GATEOPEN` / `GATECLOSE` / `SERVOSTOP`
+   - 旋轉端上方機構：`UP` / `DOWN` / `EXTEND` / `RETRACT` / `RSTOP` / `THETA+` / `THETA-` / `OPEN` / `CLOSE` / `HOME` / `ARMSTOP`
+   - 舊名相容：`TZSTOP` / `SERVOSTOP` 仍會停止 C3 #2 旋轉端
+   - 固定端暫存盒 / spin：`TL` / `TR` / `GATEOPEN` / `GATECLOSE` / `FIXEDSTOP`
    - 全域急停：`STOP`
 3. 備用 App 也必須沿用正式裝置名稱 `ESP32_MainController`。
 4. 不要再把「鬆手就送 `0`」當成主要停止策略。
    現行架構使用：
    - `LEGSTOP`
+   - `ARMSTOP`
    - `TZSTOP`
    - `RSTOP`
    - `SERVOSTOP`
+   - `FIXEDSTOP`
    - `STOP`
 
 ## 為什麼不再推薦 App Inventor 作為主流程

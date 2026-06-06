@@ -54,9 +54,9 @@
 
 ### 電控系統（分散式架構）
 - **主控**：ESP32（主控板）— 負責藍芽遥控接收 + ESP-NOW 指令分發，USB 插電腦供電
-- **子控**：ESP32-C3 ×3（#1 腳部 / #2 大圓盤+z / #3 Servo 子控板）
+- **子控**：ESP32-C3 ×3（#1 腳部 / #2 旋轉端 RotatingArm / #3 固定端 FixedStage）
 - **通訊**：ESP-NOW（點對點無線通訊）+ ESP32 內建藍芽 ← 手機遥控 App
-- **馬達驅動**：BTS7960 (IBT-2) ×4（#1/#2 步行馬達×2、#3 大圓盤、#4 z升降）+ MG996R Servo ×4（r 齒條、θ 旋轉、夾爪開合、承物盒擋板，由 C3 #3 GPIO PWM 直接驅動）
+- **馬達驅動**：BTS7960 (IBT-2) ×4（#1/#2 步行馬達×2、#3 固定端 spin、#4 旋轉端 z 升降）+ MG996R Servo ×4（C3 #2 控 r 齒條、θ 旋轉、夾爪開合；C3 #3 控承物盒 Gate）
 - **供電**：18650 鋰電池 4S ×2 組（腿部獨立 4S；其他機構 4S）+ XL4015 降壓模組 5A（Servo 專用 5V）+ LM2596 降壓模組 3A ×2（腿部 C3 #1 / 其他 C3 #2/#3）
 
 ## 🚚 運輸機器人
@@ -142,8 +142,8 @@ gantt
 │   ├── 00_macaddress/                     ← MAC 地址查詢工具
 │   ├── 01_MainController/                 ← ESP32 主控板（BLE 版）
 │   ├── 02_LegController/                  ← C3 #1 腳部子控板
-│   ├── 03_TurntableZController/            ← C3 #2 大圓盤+z 子控板
-│   ├── 04_ServoClawController/             ← C3 #3 Servo 子控板
+│   ├── 03_RotatingArmController/           ← C3 #2 旋轉端 r/θ/夾爪/z 子控板
+│   ├── 04_FixedStageController/            ← C3 #3 固定端 spin/Gate 子控板
 │   └── _test/                          ← 測試用程式
 │
 ├── 取物機器人(八足Jansen)/                  ← 🤖 八足 Theo Jansen 子系統
@@ -211,14 +211,14 @@ gantt
 - [x] ESP32 ESP-NOW 三路通訊架構建立
 - [x] ESP32 主控板程式完成（01_MainController BLE 版）
 - [x] ESP32-C3 #1 腳部子控板程式完成（02_LegController）
-- [x] ESP32-C3 #2 大圓盤+z 子控板程式完成（03_TurntableZController）
-- [x] ESP32-C3 #3 Servo 子控板程式完成（04_ServoClawController）
+- [x] ESP32-C3 #2 旋轉端子控板程式完成（03_RotatingArmController）
+- [x] ESP32-C3 #3 固定端子控板程式完成（04_FixedStageController）
 - [ ] XL4015 + LM2596 雙降壓模組接線測試
 
 ### 階段 3：取物機器人 — 遥控 App
 - [ ] BLE Controller – Arduino ESP32 配置完成
 - [ ] 步行命令與 `LEGSTOP` 測試通過
-- [ ] Turntable/Z 與 Servo 命令、分路停止測試通過
+- [ ] RotatingArm 與 FixedStage 命令、分路停止測試通過
 - [ ] App 安裝到手機
 
 ### 階段 4：取物機器人 — 手臂整合
