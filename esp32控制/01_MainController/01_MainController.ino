@@ -352,11 +352,11 @@ void processSingleChar(char c) {
       notifyBle("CMD: Fixed Spin Right");
       break;
     case 'u':
-      queueRotatingArmCommand(CMD_ARM_Z_UP, FULL_SPEED);
+      queueRotatingArmCommand(CMD_ARM_Z_UP, Z_DEFAULT_SPEED);
       notifyBle("CMD: Z Up");
       break;
     case 'j':
-      queueRotatingArmCommand(CMD_ARM_Z_DOWN, FULL_SPEED);
+      queueRotatingArmCommand(CMD_ARM_Z_DOWN, Z_DEFAULT_SPEED);
       notifyBle("CMD: Z Down");
       break;
 
@@ -467,10 +467,10 @@ void handleBleCommand(String commandText) {
     queueFixedStageCommand(CMD_FIXED_SPIN_RIGHT, FULL_SPEED);
     notifyBle("CMD: FIXED SPIN RIGHT");
   } else if (normalizedCmd == "UP" || normalizedCmd == "ZU") {
-    queueRotatingArmCommand(CMD_ARM_Z_UP, FULL_SPEED);
+    queueRotatingArmCommand(CMD_ARM_Z_UP, Z_DEFAULT_SPEED);
     notifyBle("CMD: Z UP");
   } else if (normalizedCmd == "DOWN" || normalizedCmd == "ZD") {
-    queueRotatingArmCommand(CMD_ARM_Z_DOWN, FULL_SPEED);
+    queueRotatingArmCommand(CMD_ARM_Z_DOWN, Z_DEFAULT_SPEED);
     notifyBle("CMD: Z DOWN");
   } else if (normalizedCmd == "TZSTOP" || normalizedCmd == "ARMSTOP" || normalizedCmd == "SERVOSTOP") {
     queueRotatingArmCommand(CMD_ARM_STOP, 0);

@@ -24,6 +24,7 @@
 const uint8_t FULL_SPEED = 200;
 const uint8_t HALF_SPEED = 120;
 const uint8_t LEG_DEFAULT_SPEED = 150;  // 4S 直供 12V 腿部馬達時的保守起始值
+const uint8_t Z_DEFAULT_SPEED = 120;    // Z 升降使用較低 PWM，避免蝸桿機構動作過快
 const uint8_t SPEED_MIN = 80;
 const uint8_t SPEED_MAX = 255;
 
@@ -77,8 +78,8 @@ typedef struct leg_now_message {
 // =====================================================
 enum RotatingArmCommand {
   CMD_ARM_STOP = 0,
-  CMD_ARM_R_EXTEND = 1,      // 1 - r 齒條伸出（360° Servo 正轉）
-  CMD_ARM_R_RETRACT = 2,     // 2 - r 齒條縮回（360° Servo 反轉）
+  CMD_ARM_R_EXTEND = 1,      // 1 - r 齒條伸出
+  CMD_ARM_R_RETRACT = 2,     // 2 - r 齒條縮回
   CMD_ARM_THETA_POS = 3,     // 3 - θ 旋轉（正方向）
   CMD_ARM_THETA_NEG = 4,     // 4 - θ 旋轉（反方向）
   CMD_ARM_CLAW_OPEN = 5,     // 5 - 夾爪張開

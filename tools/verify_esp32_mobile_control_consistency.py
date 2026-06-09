@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -39,6 +40,14 @@ def extract_function_body(text: str, function_name: str) -> str:
     return ""
 
 
+def extract_int_constant(text: str, constant_name: str) -> int | None:
+    pattern = rf"\b(?:const\s+)?(?:uint8_t|int)\s+{re.escape(constant_name)}\s*=\s*(\d+)\s*;"
+    match = re.search(pattern, text)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
 def main() -> int:
     failures: list[str] = []
 
@@ -61,6 +70,12 @@ def main() -> int:
         "CMD_FIXED_GATE_CLOSE",
     ):
         require(token in protocol_text, f"{protocol_rel} must define {token}", failures)
+
+    require(
+        extract_int_constant(protocol_text, "Z_DEFAULT_SPEED") == 120,
+        f"{protocol_rel} must define Z_DEFAULT_SPEED as 120",
+        failures,
+    )
 
     sketch_rels = [
         "esp32控制/01_MainController/01_MainController.ino",
@@ -122,6 +137,22 @@ def main() -> int:
             "checkRTimeout",
         ):
             require(token in arm_text, f"{arm_rel} must contain {token}", failures)
+
+        require(
+            extract_int_constant(arm_text, "R_EXTEND") == 0,
+            f"{arm_rel} must set R_EXTEND to 0 for the current rack servo direction",
+            failures,
+        )
+        require(
+            extract_int_constant(arm_text, "R_RETRACT") == 180,
+            f"{arm_rel} must set R_RETRACT to 180 for the current rack servo direction",
+            failures,
+        )
+        require(
+            "int dutyCycle = Z_DEFAULT_SPEED;" in arm_text,
+            f"{arm_rel} default Z dutyCycle must use Z_DEFAULT_SPEED",
+            failures,
+        )
 
         for forbidden in (
             "motorTurntable",
@@ -258,6 +289,18 @@ def main() -> int:
         "queueFixedStageCommand(CMD_FIXED_GATE_CLOSE",
     ):
         require(token in main_text, f"{main_rel} must route {token}", failures)
+
+    for token in (
+        "queueRotatingArmCommand(CMD_ARM_Z_UP, Z_DEFAULT_SPEED)",
+        "queueRotatingArmCommand(CMD_ARM_Z_DOWN, Z_DEFAULT_SPEED)",
+    ):
+        require(token in main_text, f"{main_rel} must route Z movement with {token}", failures)
+
+    for token in (
+        "queueRotatingArmCommand(CMD_ARM_Z_UP, FULL_SPEED)",
+        "queueRotatingArmCommand(CMD_ARM_Z_DOWN, FULL_SPEED)",
+    ):
+        require(token not in main_text, f"{main_rel} must not route Z movement with {token}", failures)
 
     require(
         'normalizedCmd == "SERVOSTOP"' in main_text and "queueRotatingArmCommand(CMD_ARM_STOP" in main_text,

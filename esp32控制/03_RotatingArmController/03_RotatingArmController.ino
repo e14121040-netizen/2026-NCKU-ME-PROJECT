@@ -63,8 +63,8 @@ bool clawServoAttached = false;
 //  Servo 角度與速度設定
 // =====================================================
 const int R_STOP     = 90;
-const int R_EXTEND   = 180;
-const int R_RETRACT  = 0;
+const int R_EXTEND   = 0;
+const int R_RETRACT  = 180;
 
 const int THETA_MIN     = 0;
 const int THETA_MAX     = 180;
@@ -85,7 +85,7 @@ const int pwmResolution = 8;
 const int pwmCh_Z_RPWM  = 4;
 const int pwmCh_Z_LPWM  = 5;
 
-int dutyCycle = 180;
+int dutyCycle = Z_DEFAULT_SPEED;
 const int SPEED_STEP = 20;
 
 // =====================================================
