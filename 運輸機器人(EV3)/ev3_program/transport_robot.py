@@ -602,6 +602,10 @@ def main():
                 # 等待觸碰感測器啟動下一輪
                 wait_touch_press(touch_sensor)
 
+                # 等待5秒（200 + 4800）
+                ev3.speaker.beep(frequency=700, duration=200)
+                wait(4800)
+
                 # 前進跨越紅線
                 robot.straight(10)
                 wait(300)
