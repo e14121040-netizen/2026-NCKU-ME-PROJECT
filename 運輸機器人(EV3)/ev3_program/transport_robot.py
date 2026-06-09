@@ -22,6 +22,9 @@
  - Port D：左輪馬達（大馬達）
 """
 
+from contextlib import contextmanager
+import sys
+
 from pybricks.hubs import EV3Brick
 from pybricks.ev3devices import Motor, ColorSensor, TouchSensor
 from pybricks.parameters import Port, Stop, Direction, Color, Button
@@ -51,6 +54,7 @@ HAS_PLACE_MOTOR = True  # 是否已安裝輸送/放置機構馬達
 PLACE_ANGLE = 225  # 放置機構單次旋轉角度
 PLACE_SPEED = 100  # 放置機構轉速 (deg/s)
 PLACE_WAIT = 1500  # 放置後等待時間 (ms)
+YELLOW_FORWARD_DISTANCE = 40  # 偵測到黃線後繼續循線前進的距離 (mm)
 
 # 安全參數
 BATTERY_CHECK_ENABLED = True  # 開啟電量檢查
@@ -81,17 +85,49 @@ COLORS_CALIBRATED = False  # 是否已完成顏色校準
 # =====================================================
 ev3 = EV3Brick()
 
-# 馬達
-motor_right = Motor(Port.C, Direction.CLOCKWISE)
-motor_left = Motor(Port.D, Direction.CLOCKWISE)
-motor_place = Motor(Port.A) if HAS_PLACE_MOTOR else None
 
-# 機器人
-robot = DriveBase(motor_left, motor_right, WHEEL_DIAMETER, AXLE_TRACK)
+def print_exception(e, file=None):
+    if file is None:
+        file = sys.stdout
+    sys.print_exception(e, file)  # pyright: ignore[reportAttributeAccessIssue]
+
+
+@contextmanager
+def catch_init_error(port: str):
+    try:
+        yield
+    except OSError as e:
+        print_exception(e)
+        ev3.screen.clear()
+        ev3.screen.print("Port {} error.".format(port))
+        wait(30000)
+        raise SystemExit(1)
+
 
 # 感測器
-sensor_line = ColorSensor(Port.S1)  # 循跡與停止線偵測
-touch_sensor = TouchSensor(Port.S4)  # 觸碰感測器
+with catch_init_error("S1"):
+    sensor_line = ColorSensor(Port.S1)  # 循跡與停止線偵測
+with catch_init_error("S4"):
+    touch_sensor = TouchSensor(Port.S4)  # 觸碰感測器
+
+# 馬達
+with catch_init_error("C"):
+    motor_right = Motor(Port.C, Direction.CLOCKWISE)
+with catch_init_error("D"):
+    motor_left = Motor(Port.D, Direction.CLOCKWISE)
+with catch_init_error("D"):
+    motor_place = Motor(Port.A) if HAS_PLACE_MOTOR else None
+
+try:
+    # 機器人
+    robot = DriveBase(motor_left, motor_right, WHEEL_DIAMETER, AXLE_TRACK)
+except ValueError as e:
+    print_exception(e)
+    ev3.screen.clear()
+    ev3.screen.print("Please reconnect")
+    ev3.screen.print("motors")
+    wait(30000)
+    raise SystemExit(1)
 
 
 # =====================================================
@@ -400,7 +436,7 @@ def check_stop_color():
         return None
 
 
-def follow_line():
+def follow_line(ignore_colors=False):
     """
     執行一步單感測器 PID 邊緣循跡。
     若偵測到停止線，直接回傳顏色交由主程式處理，避免彩色標線反射值干擾 PID。
@@ -408,10 +444,11 @@ def follow_line():
     Returns:
         color: 停止線顏色，可能為 Color.YELLOW, Color.RED, 或 None
     """
-    stop_color = check_stop_color()
+    if not ignore_colors:
+        stop_color = check_stop_color()
 
-    if stop_color in (Color.YELLOW, Color.RED):
-        return stop_color
+        if stop_color in (Color.YELLOW, Color.RED):
+            return stop_color
 
     error, ref_val = read_line_position()
     correction = pid.compute(error) * PID_OUTPUT_SCALE
@@ -565,6 +602,12 @@ def main():
                     continue
 
                 zones_placed_all += 1
+
+                # 偵測到黃線後，再向前循線一段距離
+                start_dist = robot.distance()
+                while (robot.distance() - start_dist) < YELLOW_FORWARD_DISTANCE:
+                    follow_line(ignore_colors=True)
+                    wait(10)
 
                 # 到達放置區
                 robot.stop()
