@@ -153,13 +153,13 @@ def main() -> int:
             require(token in arm_text, f"{arm_rel} must contain {token}", failures)
 
         require(
-            extract_int_constant(arm_text, "R_EXTEND") == 0,
-            f"{arm_rel} must set R_EXTEND to 0 for the current rack servo direction",
+            extract_int_constant(arm_text, "R_EXTEND") == 23,
+            f"{arm_rel} must set R_EXTEND to 23 for about 3/4 rack extend speed",
             failures,
         )
         require(
-            extract_int_constant(arm_text, "R_RETRACT") == 180,
-            f"{arm_rel} must set R_RETRACT to 180 for the current rack servo direction",
+            extract_int_constant(arm_text, "R_RETRACT") == 157,
+            f"{arm_rel} must set R_RETRACT to 157 for about 3/4 rack retract speed",
             failures,
         )
         require(
