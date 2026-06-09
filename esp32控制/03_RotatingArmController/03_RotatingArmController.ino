@@ -93,9 +93,11 @@ const int SPEED_STEP = 20;
 // =====================================================
 const unsigned long R_MAX_RUN_TIME = 5000;
 const unsigned long Z_MAX_RUN_TIME = 5000;
+const unsigned long STANDARD_SERVO_HOLD_MS = 700;
 
 unsigned long rStartTime = 0;
 unsigned long zStartTime = 0;
+unsigned long standardServoDetachAtMs = 0;
 
 bool rExtending = false;
 bool rRetracting = false;
@@ -271,6 +273,10 @@ void detachClawServoIfNeeded() {
   }
 }
 
+void scheduleStandardServoDetach() {
+  standardServoDetachAtMs = millis() + STANDARD_SERVO_HOLD_MS;
+}
+
 void detachAllServoOutputs() {
   detachRServoIfNeeded();
   detachThetaServoIfNeeded();
@@ -315,6 +321,7 @@ void thetaPos() {
   attachThetaServoIfNeeded();
   currentThetaAngle = constrain(currentThetaAngle + THETA_STEP, THETA_MIN, THETA_MAX);
   servoTheta.write(currentThetaAngle);
+  scheduleStandardServoDetach();
   Serial.print("Theta -> ");
   Serial.println(currentThetaAngle);
 }
@@ -323,6 +330,7 @@ void thetaNeg() {
   attachThetaServoIfNeeded();
   currentThetaAngle = constrain(currentThetaAngle - THETA_STEP, THETA_MIN, THETA_MAX);
   servoTheta.write(currentThetaAngle);
+  scheduleStandardServoDetach();
   Serial.print("Theta -> ");
   Serial.println(currentThetaAngle);
 }
@@ -334,6 +342,7 @@ void clawOpen() {
   attachClawServoIfNeeded();
   currentClawAngle = CLAW_OPEN_ANGLE;
   servoClaw.write(currentClawAngle);
+  scheduleStandardServoDetach();
   Serial.print("Claw OPEN -> ");
   Serial.println(currentClawAngle);
 }
@@ -342,6 +351,7 @@ void clawClose() {
   attachClawServoIfNeeded();
   currentClawAngle = CLAW_CLOSE_ANGLE;
   servoClaw.write(currentClawAngle);
+  scheduleStandardServoDetach();
   Serial.print("Claw CLOSE -> ");
   Serial.println(currentClawAngle);
 }
@@ -390,14 +400,15 @@ void startHome() {
   attachThetaServoIfNeeded();
   currentThetaAngle = THETA_CENTER;
   servoTheta.write(currentThetaAngle);
+  scheduleStandardServoDetach();
   Serial.println("Theta -> CENTER");
   Serial.println("=== ROTATING ARM HOME QUEUED ===");
 }
 
 void allStop() {
   zStop();
-  detachAllServoOutputs();
-  Serial.println("=== ROTATING ARM ALL STOP ===");
+  rStop();
+  Serial.println("=== ROTATING ARM R/Z STOP ===");
 }
 
 // =====================================================
@@ -414,6 +425,19 @@ void checkZTimeout() {
   if (motorZ_running && (millis() - zStartTime > Z_MAX_RUN_TIME)) {
     Serial.println("!! Motor Z TIMEOUT -> Safety STOP");
     zStop();
+  }
+}
+
+void checkStandardServoDetachTimeout() {
+  if (standardServoDetachAtMs == 0) {
+    return;
+  }
+
+  if ((long)(millis() - standardServoDetachAtMs) >= 0) {
+    detachThetaServoIfNeeded();
+    detachClawServoIfNeeded();
+    standardServoDetachAtMs = 0;
+    Serial.println("Theta/Claw servo PWM hold elapsed");
   }
 }
 
@@ -509,6 +533,7 @@ void setup() {
 void loop() {
   checkRTimeout();
   checkZTimeout();
+  checkStandardServoDetachTimeout();
 
   if (newDataReceived) {
     newDataReceived = false;

@@ -41,7 +41,7 @@ def extract_function_body(text: str, function_name: str) -> str:
 
 
 def extract_int_constant(text: str, constant_name: str) -> int | None:
-    pattern = rf"\b(?:const\s+)?(?:uint8_t|int)\s+{re.escape(constant_name)}\s*=\s*(\d+)\s*;"
+    pattern = rf"\b(?:const\s+)?(?:uint8_t|int|unsigned\s+long)\s+{re.escape(constant_name)}\s*=\s*(\d+)\s*;"
     match = re.search(pattern, text)
     if match is None:
         return None
@@ -117,6 +117,14 @@ def main() -> int:
         arm_setup = extract_function_body(arm_text, "setup")
         arm_execute = extract_function_body(arm_text, "executeCommand")
         arm_all_stop = extract_function_body(arm_text, "allStop")
+        arm_loop = extract_function_body(arm_text, "loop")
+        arm_theta_pos = extract_function_body(arm_text, "thetaPos")
+        arm_theta_neg = extract_function_body(arm_text, "thetaNeg")
+        arm_claw_open = extract_function_body(arm_text, "clawOpen")
+        arm_claw_close = extract_function_body(arm_text, "clawClose")
+        arm_home = extract_function_body(arm_text, "startHome")
+        arm_schedule_standard_servo_detach = extract_function_body(arm_text, "scheduleStandardServoDetach")
+        arm_check_standard_servo_detach = extract_function_body(arm_text, "checkStandardServoDetachTimeout")
 
         for token in (
             "#include <ESP32Servo.h>",
@@ -135,6 +143,8 @@ def main() -> int:
             "zDown()",
             "checkZTimeout",
             "checkRTimeout",
+            "scheduleStandardServoDetach",
+            "checkStandardServoDetachTimeout",
         ):
             require(token in arm_text, f"{arm_rel} must contain {token}", failures)
 
@@ -153,6 +163,36 @@ def main() -> int:
             f"{arm_rel} default Z dutyCycle must use Z_DEFAULT_SPEED",
             failures,
         )
+        require(
+            extract_int_constant(arm_text, "STANDARD_SERVO_HOLD_MS") == 700,
+            f"{arm_rel} must hold theta/claw PWM for 700ms after position commands",
+            failures,
+        )
+        require(
+            "standardServoDetachAtMs = millis() + STANDARD_SERVO_HOLD_MS" in arm_schedule_standard_servo_detach,
+            f"{arm_rel} scheduleStandardServoDetach() must delay theta/claw detach",
+            failures,
+        )
+        require(
+            "detachThetaServoIfNeeded()" in arm_check_standard_servo_detach
+            and "detachClawServoIfNeeded()" in arm_check_standard_servo_detach
+            and "standardServoDetachAtMs = 0" in arm_check_standard_servo_detach,
+            f"{arm_rel} checkStandardServoDetachTimeout() must detach theta/claw after the hold window",
+            failures,
+        )
+
+        for function_name, body in (
+            ("thetaPos()", arm_theta_pos),
+            ("thetaNeg()", arm_theta_neg),
+            ("clawOpen()", arm_claw_open),
+            ("clawClose()", arm_claw_close),
+            ("startHome()", arm_home),
+        ):
+            require(
+                "scheduleStandardServoDetach()" in body,
+                f"{arm_rel} {function_name} must keep theta/claw PWM enabled briefly after motion",
+                failures,
+            )
 
         for forbidden in (
             "motorTurntable",
@@ -189,8 +229,20 @@ def main() -> int:
             require(token in arm_execute, f"{arm_rel} executeCommand() must route {token}", failures)
 
         require(
-            "detachAllServoOutputs()" in arm_all_stop and "zStop()" in arm_all_stop,
-            f"{arm_rel} allStop() must stop Z and detach rotating arm servo outputs",
+            "checkStandardServoDetachTimeout();" in arm_loop,
+            f"{arm_rel} loop() must service delayed theta/claw detach",
+            failures,
+        )
+        require(
+            "rStop()" in arm_all_stop and "zStop()" in arm_all_stop,
+            f"{arm_rel} allStop() must immediately stop rack and Z motion",
+            failures,
+        )
+        require(
+            "detachAllServoOutputs()" not in arm_all_stop
+            and "detachThetaServoIfNeeded()" not in arm_all_stop
+            and "detachClawServoIfNeeded()" not in arm_all_stop,
+            f"{arm_rel} ARMSTOP must not immediately detach theta/claw standard servo PWM",
             failures,
         )
 
