@@ -123,6 +123,8 @@ def main() -> int:
         arm_claw_open = extract_function_body(arm_text, "clawOpen")
         arm_claw_close = extract_function_body(arm_text, "clawClose")
         arm_home = extract_function_body(arm_text, "startHome")
+        arm_start_claw_motion = extract_function_body(arm_text, "startClawMotion")
+        arm_check_claw_motion = extract_function_body(arm_text, "checkClawMotion")
         arm_schedule_standard_servo_detach = extract_function_body(arm_text, "scheduleStandardServoDetach")
         arm_check_standard_servo_detach = extract_function_body(arm_text, "checkStandardServoDetachTimeout")
 
@@ -144,6 +146,8 @@ def main() -> int:
             "checkZTimeout",
             "checkRTimeout",
             "scheduleStandardServoDetach",
+            "startClawMotion",
+            "checkClawMotion",
             "checkStandardServoDetachTimeout",
         ):
             require(token in arm_text, f"{arm_rel} must contain {token}", failures)
@@ -169,8 +173,51 @@ def main() -> int:
             failures,
         )
         require(
+            extract_int_constant(arm_text, "CLAW_OPEN_ANGLE") == 0,
+            f"{arm_rel} must set CLAW_OPEN_ANGLE to 0 for the current claw servo direction",
+            failures,
+        )
+        require(
+            extract_int_constant(arm_text, "CLAW_CLOSE_ANGLE") == 180,
+            f"{arm_rel} must set CLAW_CLOSE_ANGLE to 180 for the current claw servo direction",
+            failures,
+        )
+        require(
+            extract_int_constant(arm_text, "CLAW_STEP_DEGREES") == 4,
+            f"{arm_rel} must move the claw in 4-degree ramp steps",
+            failures,
+        )
+        require(
+            extract_int_constant(arm_text, "CLAW_STEP_INTERVAL_MS") == 20,
+            f"{arm_rel} must space claw ramp steps by 20ms",
+            failures,
+        )
+        require(
             "standardServoDetachAtMs = millis() + STANDARD_SERVO_HOLD_MS" in arm_schedule_standard_servo_detach,
             f"{arm_rel} scheduleStandardServoDetach() must delay theta/claw detach",
+            failures,
+        )
+        require(
+            "clawMotionActive" in arm_check_standard_servo_detach
+            and "detachClawServoIfNeeded()" in arm_check_standard_servo_detach,
+            f"{arm_rel} checkStandardServoDetachTimeout() must not detach the claw servo while a claw ramp is active",
+            failures,
+        )
+        require(
+            arm_start_claw_motion
+            and "targetClawAngle" in arm_start_claw_motion
+            and "clawMotionActive" in arm_start_claw_motion
+            and "standardServoDetachAtMs = 0" in arm_start_claw_motion,
+            f"{arm_rel} startClawMotion() must queue a non-blocking claw ramp and cancel pending claw detach",
+            failures,
+        )
+        require(
+            arm_check_claw_motion
+            and "CLAW_STEP_INTERVAL_MS" in arm_check_claw_motion
+            and "CLAW_STEP_DEGREES" in arm_check_claw_motion
+            and "servoClaw.write(currentClawAngle)" in arm_check_claw_motion
+            and "scheduleStandardServoDetach()" in arm_check_claw_motion,
+            f"{arm_rel} checkClawMotion() must advance the claw ramp and hold PWM after reaching target",
             failures,
         )
         require(
@@ -184,8 +231,6 @@ def main() -> int:
         for function_name, body in (
             ("thetaPos()", arm_theta_pos),
             ("thetaNeg()", arm_theta_neg),
-            ("clawOpen()", arm_claw_open),
-            ("clawClose()", arm_claw_close),
             ("startHome()", arm_home),
         ):
             require(
@@ -193,6 +238,19 @@ def main() -> int:
                 f"{arm_rel} {function_name} must keep theta/claw PWM enabled briefly after motion",
                 failures,
             )
+
+        require(
+            "startClawMotion(CLAW_OPEN_ANGLE" in arm_claw_open
+            and "servoClaw.write" not in arm_claw_open,
+            f"{arm_rel} clawOpen() must start a ramp to CLAW_OPEN_ANGLE instead of jumping directly",
+            failures,
+        )
+        require(
+            "startClawMotion(CLAW_CLOSE_ANGLE" in arm_claw_close
+            and "servoClaw.write" not in arm_claw_close,
+            f"{arm_rel} clawClose() must start a ramp to CLAW_CLOSE_ANGLE instead of jumping directly",
+            failures,
+        )
 
         for forbidden in (
             "motorTurntable",
@@ -231,6 +289,11 @@ def main() -> int:
         require(
             "checkStandardServoDetachTimeout();" in arm_loop,
             f"{arm_rel} loop() must service delayed theta/claw detach",
+            failures,
+        )
+        require(
+            "checkClawMotion();" in arm_loop,
+            f"{arm_rel} loop() must service non-blocking claw ramp motion",
             failures,
         )
         require(

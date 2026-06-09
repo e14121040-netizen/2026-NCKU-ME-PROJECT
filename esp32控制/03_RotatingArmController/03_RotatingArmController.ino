@@ -71,11 +71,14 @@ const int THETA_MAX     = 180;
 const int THETA_CENTER  = 90;
 const int THETA_STEP    = 15;
 
-const int CLAW_OPEN_ANGLE  = 180;
-const int CLAW_CLOSE_ANGLE = 0;
+const int CLAW_OPEN_ANGLE  = 0;
+const int CLAW_CLOSE_ANGLE = 180;
+const int CLAW_STEP_DEGREES = 4;
+const unsigned long CLAW_STEP_INTERVAL_MS = 20;
 
 int currentThetaAngle = THETA_CENTER;
 int currentClawAngle  = CLAW_OPEN_ANGLE;
+int targetClawAngle   = CLAW_OPEN_ANGLE;
 
 // =====================================================
 //  Z PWM 設定
@@ -102,7 +105,9 @@ unsigned long standardServoDetachAtMs = 0;
 bool rExtending = false;
 bool rRetracting = false;
 bool motorZ_running = false;
+bool clawMotionActive = false;
 int zDirection = 0;  // +1=up, -1=down, 0=stopped
+unsigned long lastClawStepAtMs = 0;
 
 // =====================================================
 //  ESP-NOW 回調
@@ -283,6 +288,7 @@ void detachAllServoOutputs() {
   detachClawServoIfNeeded();
   rExtending = false;
   rRetracting = false;
+  clawMotionActive = false;
   Serial.println("Rotating arm servo PWM disabled");
 }
 
@@ -338,22 +344,59 @@ void thetaNeg() {
 // =====================================================
 //  夾爪控制
 // =====================================================
-void clawOpen() {
+void startClawMotion(int targetAngle, const char *label) {
   attachClawServoIfNeeded();
-  currentClawAngle = CLAW_OPEN_ANGLE;
+  targetClawAngle = constrain(targetAngle, 0, 180);
+  standardServoDetachAtMs = 0;
+
   servoClaw.write(currentClawAngle);
-  scheduleStandardServoDetach();
-  Serial.print("Claw OPEN -> ");
-  Serial.println(currentClawAngle);
+  clawMotionActive = (currentClawAngle != targetClawAngle);
+  lastClawStepAtMs = millis();
+
+  Serial.print("Claw ");
+  Serial.print(label);
+  Serial.print(" target -> ");
+  Serial.println(targetClawAngle);
+
+  if (!clawMotionActive) {
+    scheduleStandardServoDetach();
+  }
+}
+
+void checkClawMotion() {
+  if (!clawMotionActive) {
+    return;
+  }
+
+  unsigned long now = millis();
+  if (now - lastClawStepAtMs < CLAW_STEP_INTERVAL_MS) {
+    return;
+  }
+
+  int delta = targetClawAngle - currentClawAngle;
+  if (abs(delta) <= CLAW_STEP_DEGREES) {
+    currentClawAngle = targetClawAngle;
+  } else {
+    currentClawAngle += (delta > 0) ? CLAW_STEP_DEGREES : -CLAW_STEP_DEGREES;
+  }
+
+  servoClaw.write(currentClawAngle);
+  lastClawStepAtMs = now;
+
+  if (currentClawAngle == targetClawAngle) {
+    clawMotionActive = false;
+    scheduleStandardServoDetach();
+    Serial.print("Claw reached -> ");
+    Serial.println(currentClawAngle);
+  }
+}
+
+void clawOpen() {
+  startClawMotion(CLAW_OPEN_ANGLE, "OPEN");
 }
 
 void clawClose() {
-  attachClawServoIfNeeded();
-  currentClawAngle = CLAW_CLOSE_ANGLE;
-  servoClaw.write(currentClawAngle);
-  scheduleStandardServoDetach();
-  Serial.print("Claw CLOSE -> ");
-  Serial.println(currentClawAngle);
+  startClawMotion(CLAW_CLOSE_ANGLE, "CLOSE");
 }
 
 // =====================================================
@@ -435,9 +478,15 @@ void checkStandardServoDetachTimeout() {
 
   if ((long)(millis() - standardServoDetachAtMs) >= 0) {
     detachThetaServoIfNeeded();
-    detachClawServoIfNeeded();
+    if (!clawMotionActive) {
+      detachClawServoIfNeeded();
+    }
     standardServoDetachAtMs = 0;
-    Serial.println("Theta/Claw servo PWM hold elapsed");
+    if (clawMotionActive) {
+      Serial.println("Theta servo PWM hold elapsed; claw ramp still active");
+    } else {
+      Serial.println("Theta/Claw servo PWM hold elapsed");
+    }
   }
 }
 
@@ -533,6 +582,7 @@ void setup() {
 void loop() {
   checkRTimeout();
   checkZTimeout();
+  checkClawMotion();
   checkStandardServoDetachTimeout();
 
   if (newDataReceived) {
