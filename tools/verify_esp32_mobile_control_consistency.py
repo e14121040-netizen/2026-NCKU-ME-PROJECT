@@ -178,18 +178,18 @@ def main() -> int:
             failures,
         )
         require(
-            extract_int_constant(arm_text, "CLAW_CLOSE_ANGLE") == 180,
-            f"{arm_rel} must set CLAW_CLOSE_ANGLE to 180 for the current claw servo direction",
+            extract_int_constant(arm_text, "CLAW_CLOSE_ANGLE") == 140,
+            f"{arm_rel} must set CLAW_CLOSE_ANGLE to 140 for a soft close that avoids hard end-stop force",
             failures,
         )
         require(
-            extract_int_constant(arm_text, "CLAW_STEP_DEGREES") == 4,
-            f"{arm_rel} must move the claw in 4-degree ramp steps",
+            extract_int_constant(arm_text, "CLAW_STEP_DEGREES") == 2,
+            f"{arm_rel} must move the claw in 2-degree ramp steps",
             failures,
         )
         require(
-            extract_int_constant(arm_text, "CLAW_STEP_INTERVAL_MS") == 20,
-            f"{arm_rel} must space claw ramp steps by 20ms",
+            extract_int_constant(arm_text, "CLAW_STEP_INTERVAL_MS") == 30,
+            f"{arm_rel} must space claw ramp steps by 30ms",
             failures,
         )
         require(
