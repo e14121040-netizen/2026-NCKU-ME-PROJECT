@@ -77,8 +77,8 @@ def main() -> int:
         failures,
     )
     require(
-        extract_int_constant(protocol_text, "FIXED_SPIN_DEFAULT_SPEED") == 120,
-        f"{protocol_rel} must define FIXED_SPIN_DEFAULT_SPEED as 120",
+        extract_int_constant(protocol_text, "FIXED_SPIN_DEFAULT_SPEED") == 156,
+        f"{protocol_rel} must define FIXED_SPIN_DEFAULT_SPEED as 156",
         failures,
     )
 
@@ -358,6 +358,11 @@ def main() -> int:
         require(
             "int dutyCycle = FIXED_SPIN_DEFAULT_SPEED;" in fixed_text,
             f"{fixed_rel} default spin dutyCycle must use FIXED_SPIN_DEFAULT_SPEED",
+            failures,
+        )
+        require(
+            extract_int_constant(fixed_text, "GATE_RUN_TIME_MS") == 500,
+            f"{fixed_rel} must set GATE_RUN_TIME_MS to 500 for shorter gate travel",
             failures,
         )
 

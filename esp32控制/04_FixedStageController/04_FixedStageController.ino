@@ -61,7 +61,7 @@ const int SPEED_STEP = 20;
 const int GATE_STOP        = 90;
 const int GATE_OPEN_SPEED  = 180;
 const int GATE_CLOSE_SPEED = 0;
-const unsigned long GATE_RUN_TIME_MS = 700;
+const unsigned long GATE_RUN_TIME_MS = 500;
 
 int currentGateSpeed = GATE_STOP;
 

@@ -25,7 +25,7 @@ const uint8_t FULL_SPEED = 200;
 const uint8_t HALF_SPEED = 120;
 const uint8_t LEG_DEFAULT_SPEED = 150;  // 4S 直供 12V 腿部馬達時的保守起始值
 const uint8_t Z_DEFAULT_SPEED = 120;    // Z 升降使用較低 PWM，避免蝸桿機構動作過快
-const uint8_t FIXED_SPIN_DEFAULT_SPEED = 120;  // 固定端 spin 使用較低 PWM，避免轉速過快
+const uint8_t FIXED_SPIN_DEFAULT_SPEED = 156;  // 固定端 spin 使用較低 PWM，避免轉速過快
 const uint8_t SPEED_MIN = 80;
 const uint8_t SPEED_MAX = 255;
 
