@@ -63,8 +63,8 @@ bool clawServoAttached = false;
 //  Servo 角度與速度設定
 // =====================================================
 const int R_STOP     = 90;
-const int R_EXTEND   = 23;
-const int R_RETRACT  = 157;
+const int R_EXTEND   = 120;
+const int R_RETRACT  = 60;
 
 const int THETA_MIN     = 0;
 const int THETA_MAX     = 180;
