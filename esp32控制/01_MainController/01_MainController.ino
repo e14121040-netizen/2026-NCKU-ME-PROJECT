@@ -344,11 +344,11 @@ void processSingleChar(char c) {
       break;
 
     case 'a':
-      queueFixedStageCommand(CMD_FIXED_SPIN_LEFT, FULL_SPEED);
+      queueFixedStageCommand(CMD_FIXED_SPIN_LEFT, FIXED_SPIN_DEFAULT_SPEED);
       notifyBle("CMD: Fixed Spin Left");
       break;
     case 'd':
-      queueFixedStageCommand(CMD_FIXED_SPIN_RIGHT, FULL_SPEED);
+      queueFixedStageCommand(CMD_FIXED_SPIN_RIGHT, FIXED_SPIN_DEFAULT_SPEED);
       notifyBle("CMD: Fixed Spin Right");
       break;
     case 'u':
@@ -461,10 +461,10 @@ void handleBleCommand(String commandText) {
     queueLegCommand(CMD_LEG_STOP, 0);
     notifyBle("CMD: LEG STOP");
   } else if (normalizedCmd == "TL" || normalizedCmd == "TURNTABLELEFT" || normalizedCmd == "FIXEDLEFT") {
-    queueFixedStageCommand(CMD_FIXED_SPIN_LEFT, FULL_SPEED);
+    queueFixedStageCommand(CMD_FIXED_SPIN_LEFT, FIXED_SPIN_DEFAULT_SPEED);
     notifyBle("CMD: FIXED SPIN LEFT");
   } else if (normalizedCmd == "TR" || normalizedCmd == "TURNTABLERIGHT" || normalizedCmd == "FIXEDRIGHT") {
-    queueFixedStageCommand(CMD_FIXED_SPIN_RIGHT, FULL_SPEED);
+    queueFixedStageCommand(CMD_FIXED_SPIN_RIGHT, FIXED_SPIN_DEFAULT_SPEED);
     notifyBle("CMD: FIXED SPIN RIGHT");
   } else if (normalizedCmd == "UP" || normalizedCmd == "ZU") {
     queueRotatingArmCommand(CMD_ARM_Z_UP, Z_DEFAULT_SPEED);

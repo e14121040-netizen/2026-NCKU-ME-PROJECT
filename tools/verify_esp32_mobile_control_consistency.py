@@ -76,6 +76,11 @@ def main() -> int:
         f"{protocol_rel} must define Z_DEFAULT_SPEED as 120",
         failures,
     )
+    require(
+        extract_int_constant(protocol_text, "FIXED_SPIN_DEFAULT_SPEED") == 120,
+        f"{protocol_rel} must define FIXED_SPIN_DEFAULT_SPEED as 120",
+        failures,
+    )
 
     sketch_rels = [
         "esp32控制/01_MainController/01_MainController.ino",
@@ -350,6 +355,11 @@ def main() -> int:
             f"{fixed_rel} setup() must not command gate servo during boot",
             failures,
         )
+        require(
+            "int dutyCycle = FIXED_SPIN_DEFAULT_SPEED;" in fixed_text,
+            f"{fixed_rel} default spin dutyCycle must use FIXED_SPIN_DEFAULT_SPEED",
+            failures,
+        )
 
         require(fixed_execute, f"{fixed_rel} must define executeCommand()", failures)
         for token in (
@@ -408,14 +418,18 @@ def main() -> int:
     for token in (
         "queueRotatingArmCommand(CMD_ARM_Z_UP, Z_DEFAULT_SPEED)",
         "queueRotatingArmCommand(CMD_ARM_Z_DOWN, Z_DEFAULT_SPEED)",
+        "queueFixedStageCommand(CMD_FIXED_SPIN_LEFT, FIXED_SPIN_DEFAULT_SPEED)",
+        "queueFixedStageCommand(CMD_FIXED_SPIN_RIGHT, FIXED_SPIN_DEFAULT_SPEED)",
     ):
-        require(token in main_text, f"{main_rel} must route Z movement with {token}", failures)
+        require(token in main_text, f"{main_rel} must route movement with {token}", failures)
 
     for token in (
         "queueRotatingArmCommand(CMD_ARM_Z_UP, FULL_SPEED)",
         "queueRotatingArmCommand(CMD_ARM_Z_DOWN, FULL_SPEED)",
+        "queueFixedStageCommand(CMD_FIXED_SPIN_LEFT, FULL_SPEED)",
+        "queueFixedStageCommand(CMD_FIXED_SPIN_RIGHT, FULL_SPEED)",
     ):
-        require(token not in main_text, f"{main_rel} must not route Z movement with {token}", failures)
+        require(token not in main_text, f"{main_rel} must not route movement with {token}", failures)
 
     require(
         'normalizedCmd == "SERVOSTOP"' in main_text and "queueRotatingArmCommand(CMD_ARM_STOP" in main_text,

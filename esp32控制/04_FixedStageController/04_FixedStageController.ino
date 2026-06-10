@@ -52,7 +52,7 @@ const int pwmResolution = 8;
 const int pwmCh_Spin_RPWM  = 4;
 const int pwmCh_Spin_LPWM  = 5;
 
-int dutyCycle = 180;
+int dutyCycle = FIXED_SPIN_DEFAULT_SPEED;
 const int SPEED_STEP = 20;
 
 // =====================================================
