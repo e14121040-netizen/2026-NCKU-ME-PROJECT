@@ -162,6 +162,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32c3 04_FixedStageController/
 - C3 #3 放固定端，spin right/left 與暫存盒 Gate 不跟上方線束綁在一起。
 - 有限角度（例如 +/-90 deg 或 +/-180 deg）時，跨旋轉處的供電線走旋轉中心並預留鬆弛線圈即可，不必使用 slip ring。
 - Servo V+ 走 XL4015，不能從 C3 直接取電。
-- C3 走 LM2596 5V；腿部 C3 #1 使用腿部電池組的 LM2596-Leg，C3 #2/#3 使用其他機構電池組的 LM2596-Other。
+- 供電分成兩組 4S：上半部 4S 供 C3 #2 RotatingArm、上方 Servo ×3 與 z 馬達；腿部 + FixedStage 4S 供 C3 #1/#3、腿部馬達、固定端 spin 與 Gate。
+- C3 走 LM2596 5V；C3 #2 使用上半部 4S 的 LM2596-Upper，C3 #1/#3 使用腿部 + FixedStage 4S 的 LM2596-LegFixed。
 - BTS7960 的 `VCC`、`R_EN`、`L_EN` 都必須接 3.3V。
-- 各電源組內必須共地；腿部組與其他機構組透過 ESP-NOW 無線通訊，正式架構下不跨組共地。
+- 各電源組內必須共地；上半部組與腿部 + FixedStage 組透過 ESP-NOW 無線通訊，正式架構下不跨組共地。

@@ -545,6 +545,43 @@ def main() -> int:
     require("BMS" in pickup_bom_text and "保險絲座" in pickup_bom_text and "端子台" in pickup_bom_text, "pickup BOM must include power safety parts", failures)
     require("2S 18650" in power_text and "不建議" in power_text, f"{power_rel} must document XL4015 two-cell feasibility limits", failures)
     require("2S 18650" in sop_text and "共地" in sop_text, f"{sop_rel} must document separate servo battery wiring and common ground", failures)
+    for rel, text in (
+        ("README.md", root_readme),
+        ("取物機器人(八足Jansen)/README.md", pickup_readme),
+        ("BOM.md", bom_text),
+        ("取物機器人(八足Jansen)/BOM.md", pickup_bom_text),
+        ("esp32控制/README.md", esp32_readme),
+        (wiring_rel, wiring_text),
+        (power_rel, power_text),
+        (sop_rel, sop_text),
+    ):
+        require("上半部 4S" in text, f"{rel} must document the upper-arm/claw battery as 上半部 4S", failures)
+        require("腿部 + FixedStage 4S" in text, f"{rel} must document the shared leg/fixed-stage battery as 腿部 + FixedStage 4S", failures)
+    require(
+        "C3 #1/#3" in esp32_readme and "C3 #2" in esp32_readme,
+        "esp32控制/README.md must assign C3 #1/#3 and C3 #2 to the correct power groups",
+        failures,
+    )
+    require(
+        "BTS7960 #3" in wiring_text and "腿部 + FixedStage GND" in wiring_text,
+        f"{wiring_rel} must place FixedStage spin on the leg/fixed-stage power group",
+        failures,
+    )
+    require(
+        "FixedStage" in power_text and "~4.0~5.5A" in power_text,
+        f"{power_rel} must include the added FixedStage load in the leg/fixed-stage current budget",
+        failures,
+    )
+    require(
+        "腿部電池組獨立供 `C3 #1 + BTS7960 #1/#2 + JGB37-555 ×2`" not in bom_text,
+        "BOM.md must not describe the old leg-only battery allocation",
+        failures,
+    )
+    require(
+        "其他機構電池只供 BTS7960 #3/#4、XL4015 與 LM2596-Other" not in sop_text,
+        f"{sop_rel} must not describe the old other-mechanism power allocation",
+        failures,
+    )
 
     if failures:
         print("ESP32 mobile control consistency check FAILED:")
