@@ -33,9 +33,9 @@ const unsigned long COMMAND_KEEPALIVE_INTERVAL_MS = 250;
 //  子控板 MAC 地址
 //  將 0xFF 佔位符替換為實際 MAC 地址
 // =====================================================
-uint8_t Leg_Address[] = {0x58, 0x8C, 0x81, 0x9D, 0xF6, 0x90};          // C3 #1 腿部
+uint8_t Leg_Address[] = {0xE8, 0x3D, 0xC1, 0x9E, 0x04, 0x6C};          // C3 #1 腿部(換新的)
 uint8_t rotatingArm_Address[] = {0x10, 0xB4, 0x1D, 0x1C, 0xD1, 0x28};  // C3 #2 旋轉端上方機構 + Z
-uint8_t fixedStage_Address[] = {0x58, 0x8C, 0x81, 0xA1, 0x30, 0xD0};   // C3 #3 固定端暫存盒 + Spin
+uint8_t fixedStage_Address[] = {0x58, 0x8C, 0x81, 0x9D, 0xF6, 0x90};   // C3 #3 固定端暫存盒 + Spin
 
 static const char *BLE_DEVICE_NAME = "ESP32_MainController";
 static const char *SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
