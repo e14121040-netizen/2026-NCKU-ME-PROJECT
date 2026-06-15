@@ -72,7 +72,7 @@ const int THETA_CENTER  = 90;
 const int THETA_STEP    = 15;
 
 const int CLAW_OPEN_ANGLE  = 0;
-const int CLAW_CLOSE_ANGLE = 160;
+const int CLAW_CLOSE_ANGLE = 170;
 const int CLAW_STEP_DEGREES = 2;
 const unsigned long CLAW_STEP_INTERVAL_MS = 30;
 
