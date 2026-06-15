@@ -24,6 +24,7 @@
  *    'f'=前進 'b'=後退 'l'=左旋 'r'=右旋
  *    'q'=左旋 'e'=右旋 '0'=停止
  *    '+'=加速 '-'=減速 '?'=狀態
+ *    '['/']'=左馬達 trim -/+，'{'/'}'=右馬達 trim -/+
  *
  *  硬體接線（ESP32-C3 Super Mini → BTS7960 ×2）：
  *
@@ -83,11 +84,17 @@ const int pwmCh_R_LPWM = 3;
 // =====================================================
 int dutyCycle = LEG_DEFAULT_SPEED; // 4S 直供 12V 馬達時先用保守 duty 測試
 const int SPEED_STEP = 20;
+int leftMotorTrim = 0;   // + 增加左馬達 PWM，- 降低左馬達 PWM；校正後可把值固定在這裡
+int rightMotorTrim = 0;  // + 增加右馬達 PWM，- 降低右馬達 PWM；校正後可把值固定在這裡
+const int TRIM_STEP = 5;
+const int TRIM_MIN = -80;
+const int TRIM_MAX = 80;
 
 // 主控板會定期重送持續移動命令；若封包中斷則自動停車。
 const unsigned long COMMAND_TIMEOUT_MS = 1200;
 unsigned long lastRemoteCommandMs = 0;
 bool remoteMotionActive = false;
+uint8_t activeLegCommand = CMD_LEG_STOP;
 
 // =====================================================
 //  ESP-NOW 回調：接收到資料時觸發
@@ -122,36 +129,57 @@ void setMotor(int rpwmPin, int lpwmPin, int speed) {
   }
 }
 
+int applyMotorTrim(int speed, int trim) {
+  if (speed == 0) {
+    return 0;
+  }
+
+  int direction = speed > 0 ? 1 : -1;
+  int adjustedMagnitude = constrain(abs(speed) + trim, 0, SPEED_MAX);
+  return direction * adjustedMagnitude;
+}
+
+void setLegMotors(int leftSpeed, int rightSpeed) {
+  setMotor(motorL_RPWM, motorL_LPWM, applyMotorTrim(leftSpeed, leftMotorTrim));
+  setMotor(motorR_RPWM, motorR_LPWM, applyMotorTrim(rightSpeed, rightMotorTrim));
+}
+
+void printTrimStatus() {
+  Serial.print("Left trim: ");
+  Serial.print(leftMotorTrim);
+  Serial.print(", Right trim: ");
+  Serial.println(rightMotorTrim);
+}
+
 void stopMotors() {
-  setMotor(motorL_RPWM, motorL_LPWM, 0);
-  setMotor(motorR_RPWM, motorR_LPWM, 0);
+  setLegMotors(0, 0);
   Serial.println("=== STOP ===");
 }
 
 void forward(int spd) {
-  setMotor(motorL_RPWM, motorL_LPWM, spd);
-  setMotor(motorR_RPWM, motorR_LPWM, spd);
+  setLegMotors(spd, spd);
   Serial.print("Forward, speed="); Serial.println(spd);
+  printTrimStatus();
 }
 
 void backward(int spd) {
-  setMotor(motorL_RPWM, motorL_LPWM, -spd);
-  setMotor(motorR_RPWM, motorR_LPWM, -spd);
+  setLegMotors(-spd, -spd);
   Serial.print("Backward, speed="); Serial.println(spd);
+  printTrimStatus();
 }
 
 void spinLeft(int spd) {
   // 左反轉、右正轉 → 原地左旋
-  setMotor(motorL_RPWM, motorL_LPWM, -spd);
-  setMotor(motorR_RPWM, motorR_LPWM, spd);
+  setLegMotors(-spd, spd);
   Serial.print("Spin Left, speed="); Serial.println(spd);
+  printTrimStatus();
 }
 
 void spinRight(int spd) {
   // 左正轉、右反轉 → 原地右旋
-  setMotor(motorL_RPWM, motorL_LPWM, spd);
-  setMotor(motorR_RPWM, motorR_LPWM, -spd);
+  setLegMotors(spd, -spd);
   Serial.print("Spin Right, speed="); Serial.println(spd);
+  printTrimStatus();
 }
 
 // =====================================================
@@ -160,6 +188,38 @@ void spinRight(int spd) {
 bool isMotionCommand(uint8_t cmd) {
   return cmd == CMD_FORWARD || cmd == CMD_BACKWARD ||
          cmd == CMD_SPIN_LEFT || cmd == CMD_SPIN_RIGHT;
+}
+
+void applyLegCommand(uint8_t cmd) {
+  switch (cmd) {
+    case CMD_LEG_STOP:   stopMotors(); break;
+    case CMD_FORWARD:    forward(dutyCycle); break;
+    case CMD_BACKWARD:   backward(dutyCycle); break;
+    case CMD_SPIN_LEFT:  spinLeft(dutyCycle); break;
+    case CMD_SPIN_RIGHT: spinRight(dutyCycle); break;
+    default:
+      Serial.print("Unknown CMD: ");
+      Serial.println(cmd);
+      break;
+  }
+}
+
+void reapplyActiveMotion() {
+  if (isMotionCommand(activeLegCommand)) {
+    applyLegCommand(activeLegCommand);
+  } else {
+    printTrimStatus();
+  }
+}
+
+void adjustLeftTrim(int delta) {
+  leftMotorTrim = constrain(leftMotorTrim + delta, TRIM_MIN, TRIM_MAX);
+  reapplyActiveMotion();
+}
+
+void adjustRightTrim(int delta) {
+  rightMotorTrim = constrain(rightMotorTrim + delta, TRIM_MIN, TRIM_MAX);
+  reapplyActiveMotion();
 }
 
 void executeCommand(uint8_t cmd, uint8_t spd, bool fromRemote = false) {
@@ -172,17 +232,11 @@ void executeCommand(uint8_t cmd, uint8_t spd, bool fromRemote = false) {
     remoteMotionActive = isMotionCommand(cmd);
   }
 
-  switch (cmd) {
-    case CMD_LEG_STOP:   stopMotors(); break;
-    case CMD_FORWARD:    forward(dutyCycle); break;
-    case CMD_BACKWARD:   backward(dutyCycle); break;
-    case CMD_SPIN_LEFT:  spinLeft(dutyCycle); break;
-    case CMD_SPIN_RIGHT: spinRight(dutyCycle); break;
-    default:
-      Serial.print("Unknown CMD: ");
-      Serial.println(cmd);
-      break;
+  if (cmd <= CMD_SPIN_RIGHT) {
+    activeLegCommand = cmd;
   }
+
+  applyLegCommand(cmd);
 }
 
 void checkCommandTimeout() {
@@ -245,6 +299,8 @@ void setup() {
   Serial.println("  l=SpinL    r=SpinR");
   Serial.println("  q=SpinL    e=SpinR");
   Serial.println("  0=STOP     +=SpeedUP  -=SpeedDOWN");
+  Serial.println("  '['/']' = Left trim -/+");
+  Serial.println("  '{'/'}' = Right trim -/+");
   Serial.println("  ?=Status");
   Serial.println("----------------------------");
   Serial.print("Current speed: ");
@@ -283,9 +339,15 @@ void loop() {
         dutyCycle = constrain(dutyCycle - SPEED_STEP, SPEED_MIN, SPEED_MAX);
         Serial.print("Speed DOWN -> "); Serial.println(dutyCycle);
         break;
+      case '[': adjustLeftTrim(-TRIM_STEP); break;
+      case ']': adjustLeftTrim(TRIM_STEP); break;
+      case '{': adjustRightTrim(-TRIM_STEP); break;
+      case '}': adjustRightTrim(TRIM_STEP); break;
       case '?':
         Serial.println("--- Status ---");
         Serial.print("  Speed: "); Serial.println(dutyCycle);
+        Serial.print("  Left trim: "); Serial.println(leftMotorTrim);
+        Serial.print("  Right trim: "); Serial.println(rightMotorTrim);
         Serial.print("  Remote active: "); Serial.println(remoteMotionActive ? "YES" : "NO");
         Serial.print("  Driver: BTS7960 x2");
         Serial.println();
