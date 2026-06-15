@@ -58,12 +58,11 @@ const int SPEED_STEP = 20;
 // =====================================================
 //  Gate servo 設定
 // =====================================================
-const int GATE_STOP        = 90;
-const int GATE_OPEN_SPEED  = 180;
-const int GATE_CLOSE_SPEED = 0;
-const unsigned long GATE_RUN_TIME_MS = 500;
+const int GATE_OPEN_ANGLE  = 160;
+const int GATE_CLOSE_ANGLE = 20;
+const unsigned long GATE_OPEN_HOLD_MS = 700;
 
-int currentGateSpeed = GATE_STOP;
+int currentGateAngle = GATE_CLOSE_ANGLE;
 
 // =====================================================
 //  安全保護
@@ -71,10 +70,10 @@ int currentGateSpeed = GATE_STOP;
 const unsigned long SPIN_MAX_RUN_TIME = 5000;
 
 unsigned long spinStartTime = 0;
-unsigned long gateStartTime = 0;
+unsigned long gateOpenHoldUntilMs = 0;
 
 bool spinRunning = false;
-bool gateMoving = false;
+bool gateOpenHolding = false;
 int spinDirection = 0;  // +1=left, -1=right, 0=stopped
 
 // =====================================================
@@ -173,29 +172,27 @@ void detachGateServoIfNeeded() {
 
 void gateStop() {
   detachGateServoIfNeeded();
-  currentGateSpeed = GATE_STOP;
-  gateMoving = false;
+  gateOpenHolding = false;
   Serial.println("Gate STOP");
 }
 
-void startGateMotion(int speed, const char *label) {
-  attachGateServoIfNeeded();
-  currentGateSpeed = speed;
-  gateServo.write(currentGateSpeed);
-  gateMoving = true;
-  gateStartTime = millis();
-  Serial.print("Gate ");
-  Serial.print(label);
-  Serial.print(" -> speed pulse ");
-  Serial.println(currentGateSpeed);
-}
-
 void gateOpen() {
-  startGateMotion(GATE_OPEN_SPEED, "OPEN");
+  attachGateServoIfNeeded();
+  currentGateAngle = GATE_OPEN_ANGLE;
+  gateServo.write(GATE_OPEN_ANGLE);
+  gateOpenHolding = true;
+  gateOpenHoldUntilMs = millis() + GATE_OPEN_HOLD_MS;
+  Serial.print("Gate OPEN -> angle ");
+  Serial.println(currentGateAngle);
 }
 
 void gateClose() {
-  startGateMotion(GATE_CLOSE_SPEED, "CLOSE");
+  attachGateServoIfNeeded();
+  currentGateAngle = GATE_CLOSE_ANGLE;
+  gateServo.write(GATE_CLOSE_ANGLE);
+  gateOpenHolding = false;
+  Serial.print("Gate CLOSE hold -> angle ");
+  Serial.println(currentGateAngle);
 }
 
 void allStop() {
@@ -215,9 +212,10 @@ void checkSpinTimeout() {
 }
 
 void checkGateTimeout() {
-  if (gateMoving && (millis() - gateStartTime > GATE_RUN_TIME_MS)) {
-    Serial.println("Gate timed motion complete -> STOP");
-    gateStop();
+  if (gateOpenHolding && millis() >= gateOpenHoldUntilMs) {
+    gateOpenHolding = false;
+    detachGateServoIfNeeded();
+    Serial.println("Gate open hold complete -> PWM disabled");
   }
 }
 
@@ -337,10 +335,12 @@ void loop() {
         Serial.println(dutyCycle);
         Serial.print("  Spin running: ");
         Serial.println(spinRunning ? "YES" : "NO");
-        Serial.print("  Gate moving: ");
-        Serial.println(gateMoving ? "YES" : "NO");
-        Serial.print("  Gate speed pulse: ");
-        Serial.println(currentGateSpeed);
+        Serial.print("  Gate PWM attached: ");
+        Serial.println(gateServoAttached ? "YES" : "NO");
+        Serial.print("  Gate angle: ");
+        Serial.println(currentGateAngle);
+        Serial.print("  Gate open hold: ");
+        Serial.println(gateOpenHolding ? "YES" : "NO");
         Serial.println("--------------");
         break;
       default:
