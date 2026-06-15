@@ -183,8 +183,8 @@ def main() -> int:
             failures,
         )
         require(
-            extract_int_constant(arm_text, "CLAW_CLOSE_ANGLE") == 140,
-            f"{arm_rel} must set CLAW_CLOSE_ANGLE to 140 for a soft close that avoids hard end-stop force",
+            extract_int_constant(arm_text, "CLAW_CLOSE_ANGLE") == 160,
+            f"{arm_rel} must set CLAW_CLOSE_ANGLE to 160 for the tighter claw close target",
             failures,
         )
         require(
