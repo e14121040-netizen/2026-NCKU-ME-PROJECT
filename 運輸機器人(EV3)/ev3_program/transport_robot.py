@@ -47,7 +47,9 @@ PID_OUTPUT_SCALE = -2  # PID 輸出縮放倍率
 BASE_SPEED = 120  # 基礎行駛速度 (mm/s)
 TURN_SLOWDOWN_RATE = 1.5  # 轉彎時的降速倍率
 MIN_SPEED = 20  # 降速後允許的最低前進速度
-MIN_SPEED_MARGIN = 7  # 保留的前進速度餘量
+MAX_TURN_RATE = 100  # 循跡轉向率上限 (deg/s)
+LINE_SEARCH_ERROR_THRESHOLD = 25  # 超過此誤差視為偏離邊緣，需要原地找線
+LINE_SEARCH_MIN_TURN_RATE = 70  # 原地找線時保留的最低轉向率 (deg/s)
 
 # 放置機構參數
 HAS_PLACE_MOTOR = True  # 是否已安裝輸送/放置機構馬達
@@ -233,7 +235,7 @@ def safe_stop(message="Stopped"):
     show_status(message)
 
 
-def wait_button_press(accept: Button = Button.CENTER, cancel: Button | None = None):
+def wait_button_press(accept: Button = Button.CENTER, cancel=None):
     """等待指定的按鈕被按下。
 
     Args:
@@ -387,6 +389,31 @@ def read_line_position():
     return error, val
 
 
+def clamp(value, min_value, max_value):
+    return max(min_value, min(max_value, value))
+
+
+def compute_line_drive_command(error, raw_correction):
+    """依循跡誤差計算 DriveBase.drive() 的速度與轉向率。"""
+    abs_error = abs(error)
+    drive_speed = max(MIN_SPEED, BASE_SPEED - int(abs_error * TURN_SLOWDOWN_RATE))
+    turn_rate = clamp(raw_correction, -MAX_TURN_RATE, MAX_TURN_RATE)
+
+    if abs_error >= LINE_SEARCH_ERROR_THRESHOLD:
+        drive_speed = 0
+
+        if turn_rate > 0:
+            turn_rate = max(LINE_SEARCH_MIN_TURN_RATE, turn_rate)
+        elif turn_rate < 0:
+            turn_rate = min(-LINE_SEARCH_MIN_TURN_RATE, turn_rate)
+        else:
+            turn_rate = LINE_SEARCH_MIN_TURN_RATE if error < 0 else -LINE_SEARCH_MIN_TURN_RATE
+
+        turn_rate = clamp(turn_rate, -MAX_TURN_RATE, MAX_TURN_RATE)
+
+    return int(drive_speed), int(turn_rate)
+
+
 def get_color_manhattan(a: tuple[int, int, int], b: tuple[int, int, int]):
     """
     計算兩顏色的 RGB Manhattan 距離
@@ -451,16 +478,10 @@ def follow_line(ignore_colors=False):
             return stop_color
 
     error, ref_val = read_line_position()
-    correction = pid.compute(error) * PID_OUTPUT_SCALE
-    current_speed = max(MIN_SPEED, BASE_SPEED - int(abs(error) * TURN_SLOWDOWN_RATE))
+    raw_correction = pid.compute(error) * PID_OUTPUT_SCALE
+    drive_speed, turn_rate = compute_line_drive_command(error, raw_correction)
 
-    # 限制轉向修正量，保留最低前進速度
-    if correction > 0:
-        correction = min(current_speed - MIN_SPEED_MARGIN, correction)
-    elif correction < 0:
-        correction = max(-(current_speed - MIN_SPEED_MARGIN), correction)
-
-    robot.drive(current_speed, correction)
+    robot.drive(drive_speed, turn_rate)
 
     return None
 
@@ -679,11 +700,11 @@ def main():
     ev3.speaker.beep(frequency=1000, duration=1000)
 
 
-# 執行主程式
-try:
-    main()
-except Exception as e:
-    # 安全停車：任何異常都先停下馬達
-    safe_stop("ERROR!")
-    ev3.screen.print(str(e))
-    wait(10000)
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        # 安全停車：任何異常都先停下馬達
+        safe_stop("ERROR!")
+        ev3.screen.print(str(e))
+        wait(10000)
