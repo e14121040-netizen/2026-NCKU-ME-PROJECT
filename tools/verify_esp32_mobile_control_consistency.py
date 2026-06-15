@@ -320,6 +320,9 @@ def main() -> int:
         fixed_setup = extract_function_body(fixed_text, "setup")
         fixed_execute = extract_function_body(fixed_text, "executeCommand")
         fixed_all_stop = extract_function_body(fixed_text, "allStop")
+        fixed_gate_open = extract_function_body(fixed_text, "gateOpen")
+        fixed_gate_close = extract_function_body(fixed_text, "gateClose")
+        fixed_check_gate_timeout = extract_function_body(fixed_text, "checkGateTimeout")
 
         for token in (
             "#include <ESP32Servo.h>",
@@ -335,10 +338,18 @@ def main() -> int:
             "attachGateServoIfNeeded",
             "checkSpinTimeout",
             "checkGateTimeout",
-            "GATE_OPEN_SPEED",
-            "GATE_CLOSE_SPEED",
+            "GATE_OPEN_ANGLE",
+            "GATE_CLOSE_ANGLE",
+            "GATE_OPEN_HOLD_MS",
         ):
             require(token in fixed_text, f"{fixed_rel} must contain {token}", failures)
+
+        for forbidden in (
+            "GATE_OPEN_SPEED",
+            "GATE_CLOSE_SPEED",
+            "GATE_RUN_TIME_MS",
+        ):
+            require(forbidden not in fixed_text, f"{fixed_rel} must not use timed gate speed constant {forbidden}", failures)
 
         for forbidden in (
             "servoR",
@@ -361,8 +372,33 @@ def main() -> int:
             failures,
         )
         require(
-            extract_int_constant(fixed_text, "GATE_RUN_TIME_MS") == 500,
-            f"{fixed_rel} must set GATE_RUN_TIME_MS to 500 for shorter gate travel",
+            extract_int_constant(fixed_text, "GATE_OPEN_ANGLE") == 160,
+            f"{fixed_rel} must set GATE_OPEN_ANGLE to 160 for reduced 180-degree servo travel",
+            failures,
+        )
+        require(
+            extract_int_constant(fixed_text, "GATE_CLOSE_ANGLE") == 20,
+            f"{fixed_rel} must set GATE_CLOSE_ANGLE to 20 for reduced 180-degree servo travel",
+            failures,
+        )
+        require(
+            fixed_gate_open
+            and "gateServo.write(GATE_OPEN_ANGLE)" in fixed_gate_open
+            and "gateOpenHolding = true" in fixed_gate_open,
+            f"{fixed_rel} gateOpen() must move to the open angle and schedule PWM release",
+            failures,
+        )
+        require(
+            fixed_gate_close
+            and "gateServo.write(GATE_CLOSE_ANGLE)" in fixed_gate_close
+            and "gateOpenHolding = false" in fixed_gate_close
+            and "detachGateServoIfNeeded()" not in fixed_gate_close,
+            f"{fixed_rel} gateClose() must hold the close angle without detaching PWM",
+            failures,
+        )
+        require(
+            "gateStop()" not in fixed_check_gate_timeout,
+            f"{fixed_rel} checkGateTimeout() must not release a closed gate by calling gateStop()",
             failures,
         )
 
@@ -399,7 +435,7 @@ def main() -> int:
         "case 'I':",
         "case 'K':",
         "uint8_t rotatingArm_Address[] = {0x10, 0xB4, 0x1D, 0x1C, 0xD1, 0x28}",
-        "uint8_t fixedStage_Address[] = {0x58, 0x8C, 0x81, 0xA1, 0x30, 0xD0}",
+        "uint8_t fixedStage_Address[] = {0x58, 0x8C, 0x81, 0x9D, 0xF6, 0x90}",
     ):
         require(token in main_text, f"{main_rel} must contain {token}", failures)
 
