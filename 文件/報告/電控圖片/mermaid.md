@@ -30,7 +30,7 @@ graph TD
 
     %% ================= 主控系統 =================
     subgraph Master ["主控指令中心"]
-        APP("手機 App<br>(BLE Controller)") -.--->|BLE 無線指令| ESP32_M["ESP32 主控板<br>(BLE + ESP-NOW)"]
+        APP["手機 App<br>BLE Controller"] -.->|BLE 無線指令| ESP32_M["ESP32 主控板<br>BLE + ESP-NOW"]
         PC["電腦 USB"] -->|USB 5V 獨立供電| ESP32_M
     end
 
